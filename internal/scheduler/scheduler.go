@@ -21,10 +21,16 @@ type Scheduler struct {
 	cln     *cleaner.Cleaner
 	monitor *monitor.Monitor
 
-	ctx         context.Context
-	cancel      context.CancelFunc
-	stopOnce    sync.Once
+	ctx      context.Context
+	cancel   context.CancelFunc
+	stopOnce sync.Once
+
 	cycleActive atomic.Bool
+	nextRunUnix atomic.Int64
+
+	startMu    sync.Mutex
+	started    bool
+	loopCancel context.CancelFunc
 }
 
 // New создает новый планировщик
@@ -47,8 +53,24 @@ func (s *Scheduler) Start() {
 		s.monitor.Infof("Планировщик отключен в настройках")
 		return
 	}
-	s.monitor.Infof("Планировщик запущен (интервал: %g ч)", s.cfg.Schedule.IntervalHours)
-	go s.runLoop()
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	s.started = true
+	s.startLoopLocked(true)
+}
+
+// Reload применяет изменённые настройки без перезапуска приложения
+func (s *Scheduler) Reload() {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	s.client = api.New(s.cfg.API.URL, s.cfg.API.JWTToken, s.cfg.API.TimeoutSec)
+	s.cln = cleaner.New(s.cfg.Storage.BackupLimit, s.monitor)
+
+	if s.started {
+		s.startLoopLocked(false)
+	}
+	s.monitor.Infof("Настройки применены (клиент, лимит бэкапов, расписание)")
 }
 
 // Stop останавливает планировщик (идемпотентно)
@@ -56,6 +78,11 @@ func (s *Scheduler) Stop() {
 	s.stopOnce.Do(func() {
 		s.monitor.Infof("Остановка планировщика...")
 		s.cancel()
+		s.startMu.Lock()
+		if s.loopCancel != nil {
+			s.loopCancel()
+		}
+		s.startMu.Unlock()
 		s.monitor.Infof("Планировщик остановлен")
 	})
 }
@@ -68,26 +95,85 @@ func (s *Scheduler) RunNow() {
 	}()
 }
 
-func (s *Scheduler) runLoop() {
-	interval := time.Duration(s.cfg.Schedule.IntervalHours * float64(time.Hour))
-	if interval <= 0 {
-		interval = 6 * time.Hour
-		s.monitor.Warnf("Некорректный интервал расписания — использую 6 часов")
+// NextRun возвращает время следующего цикла (нулевое значение, если неизвестно)
+func (s *Scheduler) NextRun() time.Time {
+	v := s.nextRunUnix.Load()
+	if v == 0 {
+		return time.Time{}
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	return time.Unix(v, 0)
+}
 
-	// Первый запуск сразу после старта
-	s.runBackupCycle()
+// startLoopLocked запускает (или перезапускает) цикл расписания. Вызывать под startMu.
+func (s *Scheduler) startLoopLocked(immediate bool) {
+	if s.loopCancel != nil {
+		s.loopCancel()
+	}
+	loopCtx, cancel := context.WithCancel(context.Background())
+	s.loopCancel = cancel
+	go s.runLoop(loopCtx, immediate)
+}
 
+func (s *Scheduler) runLoop(ctx context.Context, immediate bool) {
+	first := immediate
 	for {
-		select {
-		case <-ticker.C:
-			s.runBackupCycle()
-		case <-s.ctx.Done():
+		var wait time.Duration
+		if s.cfg.Schedule.Mode == "daily" {
+			target, err := nextDailyTime(s.cfg.Schedule.StartTime, time.Now())
+			if err != nil {
+				s.monitor.Warnf("Некорректное время расписания %q (%v) — перехожу на интервал", s.cfg.Schedule.StartTime, err)
+				wait = s.intervalDuration()
+			} else {
+				wait = time.Until(target)
+			}
+		} else if !first {
+			wait = s.intervalDuration()
+		}
+		first = false
+
+		if wait > 0 {
+			s.setNextRun(time.Now().Add(wait))
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return
+			}
+			if ctx.Err() != nil {
+				return
+			}
+		}
+
+		s.setNextRun(time.Now())
+		s.runBackupCycle()
+		if ctx.Err() != nil {
 			return
 		}
 	}
+}
+
+func (s *Scheduler) intervalDuration() time.Duration {
+	h := s.cfg.Schedule.IntervalHours
+	if h <= 0 {
+		h = 6
+	}
+	return time.Duration(h * float64(time.Hour))
+}
+
+// nextDailyTime вычисляет ближайший момент ЧЧ:ММ в локальном времени
+func nextDailyTime(hhmm string, now time.Time) (time.Time, error) {
+	t, err := time.Parse("15:04", hhmm)
+	if err != nil {
+		return time.Time{}, err
+	}
+	target := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
+	if !target.After(now) {
+		target = target.Add(24 * time.Hour)
+	}
+	return target, nil
+}
+
+func (s *Scheduler) setNextRun(t time.Time) {
+	s.nextRunUnix.Store(t.Unix())
 }
 
 func (s *Scheduler) runBackupCycle() {
@@ -100,7 +186,12 @@ func (s *Scheduler) runBackupCycle() {
 	s.monitor.Infof("Начало цикла бэкапов")
 	defer s.monitor.Infof("Цикл бэкапов завершен")
 
-	apps, err := s.client.GetApplications(s.ctx)
+	s.startMu.Lock()
+	client := s.client
+	cln := s.cln
+	s.startMu.Unlock()
+
+	apps, err := client.GetApplications(s.ctx)
 	if err != nil {
 		s.monitor.Errorf("Ошибка получения приложений: %v", err)
 		return
@@ -127,9 +218,9 @@ func (s *Scheduler) runBackupCycle() {
 	s.monitor.Infof("К обработке: %d приложений", len(candidates))
 
 	if len(candidates) > 0 {
-		s.dl.DownloadAll(s.ctx, s.client, candidates, s.cfg.Storage.Path)
+		s.dl.DownloadAll(s.ctx, client, candidates, s.cfg.Storage.Path)
 	}
-	s.cln.Cleanup(s.cfg.Storage.Path)
+	cln.Cleanup(s.cfg.Storage.Path)
 }
 
 func (s *Scheduler) isExcluded(app api.Application) bool {

@@ -261,3 +261,17 @@ func (m *Monitor) Close() {
 		m.logFile = nil
 	}
 }
+
+// ClearLogs очищает лог в памяти (файл не затрагивается)
+func (m *Monitor) ClearLogs() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.logs = m.logs[:0]
+}
+
+// SetLevel меняет порог логирования
+func (m *Monitor) SetLevel(level string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.level = parseLevel(level)
+}

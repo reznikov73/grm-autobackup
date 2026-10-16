@@ -13,7 +13,7 @@ import (
 )
 
 // RunTray запускает трей-приложение
-func RunTray(cfg *config.Config, s *scheduler.Scheduler, m *monitor.Monitor) error {
+func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *monitor.Monitor) error {
 	m.Infof("Запуск трей-приложения")
 
 	systray.Run(func() {
@@ -24,6 +24,8 @@ func RunTray(cfg *config.Config, s *scheduler.Scheduler, m *monitor.Monitor) err
 		// Меню
 		menRefresh := systray.AddMenuItem("🔄 Обновить сейчас", "Запустить бэкап вручную")
 		menSettings := systray.AddMenuItem("⚙ Настройки", "Открыть настройки")
+		menMonitor := systray.AddMenuItem("📊 Монитор действий", "Показать текущие операции")
+		menLog := systray.AddMenuItem("📝 Лог", "Открыть журнал")
 		systray.AddSeparator()
 		menStatus := systray.AddMenuItem("Статус: работает", "Статус работы")
 		systray.AddSeparator()
@@ -40,7 +42,14 @@ func RunTray(cfg *config.Config, s *scheduler.Scheduler, m *monitor.Monitor) err
 					m.Infof("Меню: ручной запуск")
 					s.RunNow()
 				case <-menSettings.ClickedCh:
-					m.Infof("Меню: открытие настроек (пока не реализовано)")
+					m.Infof("Меню: настройки")
+					OpenSettingsWindow(cfg, cfgPath, s, m)
+				case <-menMonitor.ClickedCh:
+					m.Infof("Меню: монитор действий")
+					OpenMonitorWindow(s, m)
+				case <-menLog.ClickedCh:
+					m.Infof("Меню: лог")
+					OpenLogWindow(m)
 				case <-menQuit.ClickedCh:
 					m.Infof("Меню: выход")
 					s.Stop()

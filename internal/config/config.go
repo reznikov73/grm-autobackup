@@ -15,6 +15,7 @@ type Config struct {
 	Exclusions     ExclusionsConfig `json:"exclusions"`
 	Logging        LoggingConfig    `json:"logging"`
 	IncludeStopped bool             `json:"include_stopped"`
+	Autostart      bool             `json:"autostart"`
 }
 
 // APIConfig настройки API
@@ -27,8 +28,9 @@ type APIConfig struct {
 // ScheduleConfig настройки расписания
 type ScheduleConfig struct {
 	Enabled       bool    `json:"enabled"`
+	Mode          string  `json:"mode"` // "interval" (каждые N часов) или "daily" (ежедневно в StartTime)
 	IntervalHours float64 `json:"interval_hours"`
-	StartTime     string  `json:"start_time"`
+	StartTime     string  `json:"start_time"` // ЧЧ:ММ для режима daily
 }
 
 // StorageConfig настройки хранилища
@@ -58,6 +60,7 @@ func Default() *Config {
 	cfg.API.URL = "https://service-api.1capp.com/partner-api/v2"
 	cfg.API.TimeoutSec = 300
 	cfg.Schedule.Enabled = true
+	cfg.Schedule.Mode = "interval"
 	cfg.Schedule.IntervalHours = 6
 	cfg.Schedule.StartTime = "00:00"
 	cfg.Storage.Path = "E:\\Backups\\1cGRM"
@@ -79,6 +82,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.API.TimeoutSec <= 0 {
 		c.API.TimeoutSec = 300
+	}
+	if c.Schedule.Mode != "daily" {
+		c.Schedule.Mode = "interval"
 	}
 	if c.Schedule.IntervalHours <= 0 {
 		c.Schedule.IntervalHours = 6

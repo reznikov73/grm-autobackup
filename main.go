@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"grm-autobackup/internal/autostart"
 	"grm-autobackup/internal/config"
 	"grm-autobackup/internal/monitor"
 	"grm-autobackup/internal/scheduler"
@@ -70,9 +72,29 @@ func main() {
 		m.Warnf("JWT токен не заполнен — заполните api.jwt_token в %s", cfgPath)
 	}
 
+	// Автозапуск: приводим запись в реестре в соответствие с настройкой.
+	if err := autostart.Sync(cfg.Autostart, exePath); err != nil {
+		m.Warnf("Автозапуск: %v", err)
+	}
+
 	s := scheduler.New(cfg, m)
 
-	if err := ui.RunTray(cfg, s, m); err != nil {
+	// Тестовый хук для автотестов: GRM_TEST_WINDOW=settings|monitor|log
+	if w := os.Getenv("GRM_TEST_WINDOW"); w != "" {
+		go func() {
+			time.Sleep(3 * time.Second)
+			switch w {
+			case "settings":
+				ui.OpenSettingsWindow(cfg, cfgPath, s, m)
+			case "monitor":
+				ui.OpenMonitorWindow(s, m)
+			case "log":
+				ui.OpenLogWindow(m)
+			}
+		}()
+	}
+
+	if err := ui.RunTray(cfg, cfgPath, s, m); err != nil {
 		m.Errorf("Ошибка запуска UI: %v", err)
 	}
 
