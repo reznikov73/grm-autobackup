@@ -1,0 +1,6 @@
+/grm-autobackup.exe
+/logs/
+/data/config.json
+/data/config.json.bak
+*.part
+*.bak
