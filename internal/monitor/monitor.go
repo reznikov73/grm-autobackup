@@ -1,38 +1,56 @@
 package monitor
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
-// ActionType тип действия
+// ActionStatus тип статуса действия
 type ActionStatus string
 
 const (
-	StatusIdle       ActionStatus = "idle"
+	StatusIdle        ActionStatus = "idle"
 	StatusDownloading ActionStatus = "downloading"
-	StatusCleaning   ActionStatus = "cleaning"
-	StatusError      ActionStatus = "error"
+	StatusCleaning    ActionStatus = "cleaning"
+	StatusError       ActionStatus = "error"
 )
 
 // Action текущее действие
 type Action struct {
-	ID          string        `json:"id"`
-	Type        ActionStatus  `json:"type"`
-	Description string        `json:"description"`
-	Progress    float64       `json:"progress"`
-	StartedAt   time.Time     `json:"started_at"`
-	FinishedAt  time.Time     `json:"finished_at"`
-	Error       string        `json:"error,omitempty"`
+	ID          string       `json:"id"`
+	Type        ActionStatus `json:"type"`
+	Description string       `json:"description"`
+	Progress    float64      `json:"progress"`
+	StartedAt   time.Time    `json:"started_at"`
+	FinishedAt  time.Time    `json:"finished_at"`
+	Error       string       `json:"error,omitempty"`
 }
 
-// Monitor мониторит действия приложения
+// Уровни логирования
+const (
+	levelDebug = iota
+	levelInfo
+	levelWarn
+	levelError
+)
+
+// Monitor мониторит действия приложения и ведет лог (память + файл)
 type Monitor struct {
-	mu       sync.RWMutex
-	current  *Action
-	history  []*Action
-	logs     []string
-	maxLogs  int
+	mu      sync.RWMutex
+	current *Action
+	history []*Action
+	logs    []string
+	maxLogs int
+
+	logFile    *os.File
+	logPath    string
+	maxSize    int64
+	maxBackups int
+	level      int
 }
 
 // New создает новый монитор
@@ -41,66 +59,205 @@ func New() *Monitor {
 		history: make([]*Action, 0),
 		logs:    make([]string, 0),
 		maxLogs: 1000,
+		level:   levelInfo,
 	}
 }
 
-// SetCurrent устанавливает текущее действие
+// SetupFile подключает файловый лог с ротацией
+func (m *Monitor) SetupFile(path string, maxSizeMB, maxBackups int, level string) error {
+	if maxSizeMB <= 0 {
+		maxSizeMB = 50
+	}
+	if maxBackups <= 0 {
+		maxBackups = 5
+	}
+	dir := filepath.Dir(path)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.logFile != nil {
+		m.logFile.Close()
+	}
+	m.logFile = f
+	m.logPath = path
+	m.maxSize = int64(maxSizeMB) * 1024 * 1024
+	m.maxBackups = maxBackups
+	m.level = parseLevel(level)
+	return nil
+}
+
+func parseLevel(s string) int {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return levelDebug
+	case "warn", "warning":
+		return levelWarn
+	case "error":
+		return levelError
+	default:
+		return levelInfo
+	}
+}
+
+func levelName(l int) string {
+	switch l {
+	case levelDebug:
+		return "DEBUG"
+	case levelWarn:
+		return "WARN"
+	case levelError:
+		return "ERROR"
+	default:
+		return "INFO"
+	}
+}
+
+// logf пишет строку в память и файл (с учетом уровня)
+func (m *Monitor) logf(level int, format string, args ...interface{}) {
+	if level < m.level {
+		return
+	}
+	msg := fmt.Sprintf(format, args...)
+	entry := time.Now().Format("2006-01-02 15:04:05") + " [" + levelName(level) + "] " + msg
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.logs = append(m.logs, entry)
+	if len(m.logs) > m.maxLogs {
+		m.logs = m.logs[len(m.logs)-m.maxLogs:]
+	}
+
+	if m.logFile == nil {
+		return
+	}
+	m.rotateIfNeededLocked()
+	if _, err := m.logFile.WriteString(entry + "\n"); err != nil {
+		fmt.Fprintf(os.Stderr, "log write error: %v\n", err)
+	}
+}
+
+// rotateIfNeededLocked выполняет ротацию файла лога при превышении размера
+func (m *Monitor) rotateIfNeededLocked() {
+	if m.logFile == nil || m.maxSize <= 0 || m.maxBackups <= 0 {
+		return
+	}
+	st, err := m.logFile.Stat()
+	if err != nil || st.Size() < m.maxSize {
+		return
+	}
+	m.logFile.Close()
+	base := m.logPath
+	_ = os.Remove(fmt.Sprintf("%s.%d", base, m.maxBackups))
+	for i := m.maxBackups - 1; i >= 1; i-- {
+		_ = os.Rename(fmt.Sprintf("%s.%d", base, i), fmt.Sprintf("%s.%d", base, i+1))
+	}
+	_ = os.Rename(base, base+".1")
+	f, err := os.OpenFile(base, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		m.logFile = nil
+		return
+	}
+	m.logFile = f
+}
+
+// Debugf пишет отладочную запись
+func (m *Monitor) Debugf(format string, args ...interface{}) { m.logf(levelDebug, format, args...) }
+
+// Infof пишет информационную запись
+func (m *Monitor) Infof(format string, args ...interface{}) { m.logf(levelInfo, format, args...) }
+
+// Warnf пишет предупреждение
+func (m *Monitor) Warnf(format string, args ...interface{}) { m.logf(levelWarn, format, args...) }
+
+// Errorf пишет ошибку
+func (m *Monitor) Errorf(format string, args ...interface{}) { m.logf(levelError, format, args...) }
+
+// AddLog добавляет запись в лог (совместимость, уровень INFO)
+func (m *Monitor) AddLog(msg string) { m.logf(levelInfo, "%s", msg) }
+
+// SetCurrent устанавливает текущее действие (сохраняется копия)
 func (m *Monitor) SetCurrent(action *Action) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.current = action
+	if action == nil {
+		m.current = nil
+		return
+	}
+	c := *action
+	m.current = &c
 }
 
-// GetCurrent возвращает текущее действие
+// UpdateProgress обновляет прогресс текущего действия
+func (m *Monitor) UpdateProgress(id string, progress float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current != nil && m.current.ID == id {
+		m.current.Progress = progress
+	}
+}
+
+// GetCurrent возвращает копию текущего действия
 func (m *Monitor) GetCurrent() *Action {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if m.current == nil {
 		return &Action{Type: StatusIdle}
 	}
-	return m.current
+	c := *m.current
+	return &c
 }
 
-// AddLog добавляет запись в лог
-func (m *Monitor) AddLog(msg string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	entry := timestamp + " " + msg
-	m.logs = append(m.logs, entry)
-	if len(m.logs) > m.maxLogs {
-		m.logs = m.logs[len(m.logs)-m.maxLogs:]
-	}
-}
-
-// GetLogs возвращает последние N записей лога
-func (m *Monitor) GetLogs(n int) []string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if n > len(m.logs) {
-		n = len(m.logs)
-	}
-	if n == 0 {
-		return m.logs
-	}
-	return m.logs[len(m.logs)-n:]
-}
-
-// AddToHistory добавляет действие в историю
+// AddToHistory добавляет действие в историю (сохраняется копия)
 func (m *Monitor) AddToHistory(action *Action) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.history = append(m.history, action)
+	c := *action
+	m.history = append(m.history, &c)
 	if len(m.history) > 50 {
 		m.history = m.history[len(m.history)-50:]
 	}
 }
 
-// GetHistory возвращает историю действий
+// GetHistory возвращает копии истории действий
 func (m *Monitor) GetHistory() []*Action {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	result := make([]*Action, len(m.history))
-	copy(result, m.history)
+	for i, a := range m.history {
+		c := *a
+		result[i] = &c
+	}
 	return result
+}
+
+// GetLogs возвращает последние N записей лога (n <= 0 — все)
+func (m *Monitor) GetLogs(n int) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if n <= 0 || n > len(m.logs) {
+		n = len(m.logs)
+	}
+	out := make([]string, n)
+	copy(out, m.logs[len(m.logs)-n:])
+	return out
+}
+
+// Close закрывает файловый лог
+func (m *Monitor) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.logFile != nil {
+		m.logFile.Close()
+		m.logFile = nil
+	}
 }
