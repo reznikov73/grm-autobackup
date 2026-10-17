@@ -13,6 +13,7 @@ type Config struct {
 	Schedule       ScheduleConfig   `json:"schedule"`
 	Storage        StorageConfig    `json:"storage"`
 	Exclusions     ExclusionsConfig `json:"exclusions"`
+	Inclusions     InclusionsConfig `json:"inclusions"`
 	Logging        LoggingConfig    `json:"logging"`
 	IncludeStopped bool             `json:"include_stopped"`
 	Autostart      bool             `json:"autostart"`
@@ -46,6 +47,11 @@ type ExclusionsConfig struct {
 	ApplicationNames []string `json:"application_names"`
 }
 
+// InclusionsConfig выбранные приложения (если список не пуст — обрабатываются только они)
+type InclusionsConfig struct {
+	ApplicationIDs []string `json:"application_ids"`
+}
+
 // LoggingConfig настройки логирования
 type LoggingConfig struct {
 	Level      string `json:"level"`
@@ -68,6 +74,7 @@ func Default() *Config {
 	cfg.Storage.MaxDiskUsageMB = 10000
 	cfg.Exclusions.ApplicationIDs = []string{}
 	cfg.Exclusions.ApplicationNames = []string{}
+	cfg.Inclusions.ApplicationIDs = []string{}
 	cfg.Logging.Level = "info"
 	cfg.Logging.File = "logs/autobackup.log"
 	cfg.Logging.MaxSizeMB = 50

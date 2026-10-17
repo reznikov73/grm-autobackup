@@ -151,7 +151,7 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 	action := &monitor.Action{
 		ID:          app.ID,
 		Type:        monitor.StatusDownloading,
-		Description: "Скачивание: " + app.Name,
+		Description: app.Name,
 		StartedAt:   time.Now(),
 	}
 	d.monitor.SetCurrent(action)
@@ -167,12 +167,36 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 		d.monitor.Infof("Скачивание: %s (%.1f МБ по данным API)", savePath, latest.Size)
 	}
 
+	var (
+		lastPublish time.Time
+		lastTime    time.Time
+		lastWritten int64
+		speed       float64
+	)
 	err = client.DownloadBackup(ctx, latest.Link, savePath, func(written, total int64) {
+		now := time.Now()
+		if lastTime.IsZero() {
+			lastTime = now
+			lastWritten = written
+		} else if dt := now.Sub(lastTime).Seconds(); dt >= 0.5 {
+			inst := float64(written-lastWritten) / dt
+			if speed == 0 {
+				speed = inst
+			} else {
+				speed = 0.7*speed + 0.3*inst
+			}
+			lastTime = now
+			lastWritten = written
+		}
+		if now.Sub(lastPublish) < 250*time.Millisecond {
+			return
+		}
+		lastPublish = now
 		percent := 0.0
 		if total > 0 {
 			percent = float64(written) / float64(total) * 100
 		}
-		d.monitor.UpdateProgress(app.ID, percent)
+		d.monitor.UpdateProgress(app.ID, percent, speed, written, total)
 	})
 	if err != nil {
 		d.monitor.Errorf("Ошибка скачивания %s: %v", filename, err)

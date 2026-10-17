@@ -202,16 +202,28 @@ func (s *Scheduler) runBackupCycle() {
 	}
 	s.monitor.Infof("Найдено приложений: %d", len(apps))
 
-	// Фильтр по статусу и исключениям
+	// Явный выбор приложений (галочки в окне настроек)
+	selected := s.cfg.Inclusions.ApplicationIDs
+	if len(selected) > 0 {
+		s.monitor.Infof("Режим выбора: указано приложений — %d", len(selected))
+	}
+
 	var candidates []api.Application
 	for _, app := range apps {
-		statusOK := app.Status == "running" || (s.cfg.IncludeStopped && app.Status == "stopped")
-		if !statusOK {
-			continue
-		}
 		if s.isExcluded(app) {
 			s.monitor.Infof("Исключено настройками: %s", app.Name)
 			continue
+		}
+		if len(selected) > 0 {
+			if !containsID(selected, app.ID) {
+				continue
+			}
+			// Явно выбранное приложение обрабатываем независимо от статуса
+		} else {
+			statusOK := app.Status == "running" || (s.cfg.IncludeStopped && app.Status == "stopped")
+			if !statusOK {
+				continue
+			}
 		}
 		candidates = append(candidates, app)
 	}
@@ -231,6 +243,15 @@ func (s *Scheduler) isExcluded(app api.Application) bool {
 	}
 	for _, name := range s.cfg.Exclusions.ApplicationNames {
 		if name == app.Name {
+			return true
+		}
+	}
+	return false
+}
+
+func containsID(ids []string, id string) bool {
+	for _, v := range ids {
+		if v == id {
 			return true
 		}
 	}

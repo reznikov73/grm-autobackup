@@ -5,3 +5,10 @@
 *.part
 *.bak
 /uismoke.exe
+*.exe~
+.agents/
+.cluster/
+.finance-tool-capability.json
+.jw-proxy-capability.json
+.legal-proxy-capability.json
+.tyc-proxy-capability.json

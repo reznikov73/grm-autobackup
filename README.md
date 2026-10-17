@@ -7,18 +7,21 @@
 
 - Скачивание последнего готового бэкапа каждого приложения по расписанию:
   «каждые N часов» или «ежедневно в ЧЧ:ММ».
+- Выбор приложений в удобном окне: список «клиент → приложения (конфигурации)»
+  с чекбоксами, поиском и статусами (работает / остановлено).
 - Докачка: загрузка пишется во временный файл `*.part`; при обрыве связи
   продолжается с места остановки (HTTP Range), после успеха переименовывается
   в финальный файл. Обрывок никогда не «залипает» как готовый бэкап.
 - Структура хранения: `<папка>/<Клиент>/<Приложение>/backup_ГГГГ-ММ-ДД_ЧЧ-ММ-СС.zip`
   (имена берутся из API, запрещённые для Windows символы заменяются).
 - Лимит бэкапов на приложение — старые удаляются автоматически.
-- Исключения приложений по ID и по именам; опция «обрабатывать и остановленные».
 - Проверка свободного места перед скачиванием.
 - Файловый лог с ротацией: `logs/autobackup.log` (+ `autobackup.log.1`, …).
-- Трей: иконка-состояние (зелёная/жёлтая/красная/серая), статус, ручной запуск,
-  окна «Настройки», «Монитор действий», «Лог».
-- Автозапуск при входе в Windows (запись в HKCU\...\Run, только по галочке в настройках).
+- Трей: иконки состояний (готов / скачивание с прогрессом / очистка / ошибка /
+  пауза), статус со скоростью, ручной запуск.
+- Окна «Настройки» (вкладки), «Монитор действий» (прогресс, скорость, ETA,
+  история операций), «Лог» (фильтры, поиск, автоскролл).
+- Автозапуск при входе в Windows (запись в HKCU\...\Run, только по галочке).
 
 ## Сборка
 
@@ -26,7 +29,13 @@
 go build -ldflags "-s -w -H=windowsgui" -o grm-autobackup.exe .
 ```
 
-Манифест Common Controls v6 уже встроен (`grm-autobackup.manifest` + `rsrc.syso`; пересоздать: `go install github.com/akavel/rsrc@latest` и `rsrc -manifest grm-autobackup.manifest -o rsrc.syso -arch amd64`).
+Манифест Common Controls v6 и иконка приложения встроены через `rsrc.syso`.
+Если меняете `grm-autobackup.manifest` или `resources/icons/app.ico`, пересоздайте:
+
+```
+go install github.com/akavel/rsrc@latest
+rsrc -manifest grm-autobackup.manifest -ico resources/icons/app.ico -o rsrc.syso -arch amd64
+```
 
 ## Запуск
 
@@ -35,7 +44,7 @@ go build -ldflags "-s -w -H=windowsgui" -o grm-autobackup.exe .
 ```
 
 Конфигурация ищется рядом с exe: `data/config.json`. Если файла нет — создаётся
-со значениями по умолчанию; заполните `api.jwt_token`.
+со значениями по умолчанию; заполните `api.jwt_token` (или укажите его в окне настроек).
 
 ## Конфигурация (data/config.json)
 
@@ -50,8 +59,8 @@ go build -ldflags "-s -w -H=windowsgui" -o grm-autobackup.exe .
 | `schedule.start_time` | Время ЧЧ:ММ для режима daily |
 | `storage.path` | Папка хранения бэкапов |
 | `storage.backup_limit` | Лимит бэкапов на приложение |
-| `exclusions.application_ids` | Исключаемые ID приложений |
-| `exclusions.application_names` | Исключаемые имена приложений |
+| `inclusions.application_ids` | Выбранные приложения (пусто — обрабатываются все по правилам статуса) |
+| `exclusions.application_ids` / `application_names` | Устаревшие исключения (поддерживаются, интерфейс их больше не использует) |
 | `include_stopped` | Обрабатывать и остановленные приложения (по умолчанию false) |
 | `autostart` | Автозапуск при входе в Windows (по умолчанию false) |
 | `logging.level` | debug / info / warn / error |
@@ -62,7 +71,7 @@ go build -ldflags "-s -w -H=windowsgui" -o grm-autobackup.exe .
 
 - Тестовый помощник окон: `go build -o uismoke.exe ./cmd/uismoke` →
   `uismoke.exe settings|monitor|log`.
-- Тестовый хук: переменная окружения `GRM_TEST_WINDOW=settings|monitor|log`
-  открывает окно через 3 секунды после старта (для автотестов).
+- Тестовые хуки: `GRM_TEST_WINDOW=settings|monitor|log` открывает окно через
+  3 секунды после старта; `GRM_TEST_TAB=0..3` — выбор вкладки окна настроек.
 
 Документация: `docs/TZ.md`, `docs/API.md`.

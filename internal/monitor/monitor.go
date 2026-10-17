@@ -21,13 +21,16 @@ const (
 
 // Action текущее действие
 type Action struct {
-	ID          string       `json:"id"`
-	Type        ActionStatus `json:"type"`
-	Description string       `json:"description"`
-	Progress    float64      `json:"progress"`
-	StartedAt   time.Time    `json:"started_at"`
-	FinishedAt  time.Time    `json:"finished_at"`
-	Error       string       `json:"error,omitempty"`
+	ID           string       `json:"id"`
+	Type         ActionStatus `json:"type"`
+	Description  string       `json:"description"`
+	Progress     float64      `json:"progress"`
+	SpeedBps     float64      `json:"speed_bps,omitempty"`
+	BytesWritten int64        `json:"bytes_written,omitempty"`
+	BytesTotal   int64        `json:"bytes_total,omitempty"`
+	StartedAt    time.Time    `json:"started_at"`
+	FinishedAt   time.Time    `json:"finished_at"`
+	Error        string       `json:"error,omitempty"`
 }
 
 // Уровни логирования
@@ -197,12 +200,15 @@ func (m *Monitor) SetCurrent(action *Action) {
 	m.current = &c
 }
 
-// UpdateProgress обновляет прогресс текущего действия
-func (m *Monitor) UpdateProgress(id string, progress float64) {
+// UpdateProgress обновляет прогресс и скорость текущего действия
+func (m *Monitor) UpdateProgress(id string, percent, speedBps float64, written, total int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.current != nil && m.current.ID == id {
-		m.current.Progress = progress
+		m.current.Progress = percent
+		m.current.SpeedBps = speedBps
+		m.current.BytesWritten = written
+		m.current.BytesTotal = total
 	}
 }
 
@@ -252,16 +258,6 @@ func (m *Monitor) GetLogs(n int) []string {
 	return out
 }
 
-// Close закрывает файловый лог
-func (m *Monitor) Close() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.logFile != nil {
-		m.logFile.Close()
-		m.logFile = nil
-	}
-}
-
 // ClearLogs очищает лог в памяти (файл не затрагивается)
 func (m *Monitor) ClearLogs() {
 	m.mu.Lock()
@@ -274,4 +270,14 @@ func (m *Monitor) SetLevel(level string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.level = parseLevel(level)
+}
+
+// Close закрывает файловый лог
+func (m *Monitor) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.logFile != nil {
+		m.logFile.Close()
+		m.logFile = nil
+	}
 }

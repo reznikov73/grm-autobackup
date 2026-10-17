@@ -57,7 +57,8 @@ func OpenLogWindow(m *monitor.Monitor) {
 		err := MainWindow{
 			AssignTo: &dlg,
 			Title:    "Лог — 1С:ГРМ AutoBackup",
-			MinSize:  Size{Width: 780, Height: 540},
+			Size:     Size{Width: 900, Height: 560},
+			MinSize:  Size{Width: 700, Height: 420},
 			Layout:   VBox{},
 			Children: []Widget{
 				Composite{
@@ -70,7 +71,13 @@ func OpenLogWindow(m *monitor.Monitor) {
 						CheckBox{AssignTo: &autoScroll, Text: "Автоскролл", Checked: true},
 					},
 				},
-				TextEdit{AssignTo: &te, ReadOnly: true, VScroll: true, HScroll: true},
+				TextEdit{
+					AssignTo: &te,
+					ReadOnly: true,
+					VScroll:  true,
+					HScroll:  true,
+					Font:     Font{Family: "Consolas", PointSize: 9},
+				},
 				Composite{
 					Layout: HBox{},
 					Children: []Widget{
@@ -89,6 +96,7 @@ func OpenLogWindow(m *monitor.Monitor) {
 			return nil, err
 		}
 
+		centerForm(dlg, 900, 560)
 		levelCombo.CurrentIndexChanged().Attach(func() { refresh() })
 		searchEdit.TextChanged().Attach(func() { refresh() })
 		refresh()

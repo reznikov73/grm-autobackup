@@ -18,7 +18,7 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 
 	systray.Run(func() {
 		m.Infof("Трей инициализирован")
-		systray.SetIcon(icons.Gray)
+		systray.SetIcon(icons.Idle())
 		systray.SetTitle("1С:ГРМ AutoBackup")
 
 		// Меню
@@ -53,53 +53,54 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 				case <-menQuit.ClickedCh:
 					m.Infof("Меню: выход")
 					s.Stop()
-					systray.SetIcon(icons.Gray)
+					systray.SetIcon(icons.Paused())
 					systray.Quit()
 					return
 				}
 			}
 		}()
 
-		// Периодическое обновление статуса в трее
+		// Периодическое обновление статуса и иконки в трее
 		go func() {
-			ticker := time.NewTicker(5 * time.Second)
+			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
 
-			lastIcon := "gray"
+			lastIconKey := ""
 			lastTitle := ""
 			for range ticker.C {
 				action := m.GetCurrent()
-				icon := "green"
+
+				iconKey := "idle"
+				iconBytes := icons.Idle()
 				title := "Статус: готов"
+
 				switch action.Type {
 				case monitor.StatusDownloading:
-					icon = "yellow"
-					title = fmt.Sprintf("Статус: скачивание %d%%", int(action.Progress))
+					frame := (int(action.Progress) / 10) * 10
+					iconKey = fmt.Sprintf("dl-%d", frame)
+					iconBytes = icons.Downloading(float64(frame))
+					title = fmt.Sprintf("Скачивание: %d%%", int(action.Progress))
+					if action.SpeedBps > 0 {
+						title += " · " + formatBytes(int64(action.SpeedBps)) + "/с"
+					}
 				case monitor.StatusCleaning:
-					icon = "yellow"
+					iconKey = "cleaning"
+					iconBytes = icons.Cleaning()
 					title = "Статус: очистка"
 				case monitor.StatusError:
-					icon = "red"
+					iconKey = "error"
+					iconBytes = icons.Error()
 					title = "Статус: ошибка"
 				}
 
+				if iconKey != lastIconKey && len(iconBytes) > 0 {
+					systray.SetIcon(iconBytes)
+					lastIconKey = iconKey
+				}
 				if title != lastTitle {
 					menStatus.SetTitle(title)
 					systray.SetTitle(title)
 					lastTitle = title
-				}
-				if icon != lastIcon {
-					switch icon {
-					case "green":
-						systray.SetIcon(icons.Green)
-					case "yellow":
-						systray.SetIcon(icons.Yellow)
-					case "red":
-						systray.SetIcon(icons.Red)
-					default:
-						systray.SetIcon(icons.Gray)
-					}
-					lastIcon = icon
 				}
 			}
 		}()
