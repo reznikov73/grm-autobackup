@@ -228,12 +228,13 @@ func (c *Client) GetCustomer(ctx context.Context, customerID string) (*Customer,
 	return &items[0], nil
 }
 
-// DownloadBackup скачивает бэкап по ссылке в файл savePath.
-// Данные пишутся в savePath+".part" и переименовываются по завершении.
+// DownloadBackup скачивает бэкап по ссылке в файл с базовым путём basePath (без расширения).
+// Данные пишутся в basePath+".part"; после успешной загрузки файл получает расширение
+// по фактическому формату (.zip/.bz2/.gz/.7z/.rar) и возвращается полный путь.
 // При наличии .part выполняется докачка через заголовок Range.
 // Сторожевой таймер: если данных нет 120 секунд — загрузка прерывается.
-func (c *Client) DownloadBackup(ctx context.Context, link, savePath string, progress func(written, total int64)) error {
-	partPath := savePath + ".part"
+func (c *Client) DownloadBackup(ctx context.Context, link, basePath string, progress func(written, total int64)) (string, error) {
+	partPath := basePath + ".part"
 
 	var resumeFrom int64
 	if st, err := os.Stat(partPath); err == nil && st.Size() > 0 {
@@ -245,7 +246,7 @@ func (c *Client) DownloadBackup(ctx context.Context, link, savePath string, prog
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, link, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if resumeFrom > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", resumeFrom))
@@ -253,7 +254,7 @@ func (c *Client) DownloadBackup(ctx context.Context, link, savePath string, prog
 
 	resp, err := c.dlClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	var file *os.File
@@ -261,27 +262,25 @@ func (c *Client) DownloadBackup(ctx context.Context, link, savePath string, prog
 
 	switch {
 	case resumeFrom > 0 && resp.StatusCode == http.StatusRequestedRangeNotSatisfiable:
-		// Файл .part больше не подходит для докачки — начинаем заново.
 		resp.Body.Close()
 		if err := os.Remove(partPath); err != nil {
-			return fmt.Errorf("поврежденный файл .part не удаляется: %v", err)
+			return "", fmt.Errorf("поврежденный файл .part не удаляется: %v", err)
 		}
-		return c.DownloadBackup(ctx, link, savePath, progress)
+		return c.DownloadBackup(ctx, link, basePath, progress)
 	case resumeFrom > 0 && resp.StatusCode == http.StatusPartialContent:
 		file, err = os.OpenFile(partPath, os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			resp.Body.Close()
-			return err
+			return "", err
 		}
 		if resp.ContentLength > 0 {
 			expected = resumeFrom + resp.ContentLength
 		}
 	case resumeFrom > 0 && resp.StatusCode == http.StatusOK:
-		// Сервер не поддержал докачку — начинаем заново.
 		file, err = os.OpenFile(partPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			resp.Body.Close()
-			return err
+			return "", err
 		}
 		resumeFrom = 0
 		if resp.ContentLength > 0 {
@@ -291,13 +290,13 @@ func (c *Client) DownloadBackup(ctx context.Context, link, savePath string, prog
 		file, err = os.OpenFile(partPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			resp.Body.Close()
-			return err
+			return "", err
 		}
 		if resp.ContentLength > 0 {
 			expected = resp.ContentLength
 		}
 	default:
-		return readAPIError(resp)
+		return "", readAPIError(resp)
 	}
 	defer resp.Body.Close()
 	defer file.Close()
@@ -322,19 +321,51 @@ func (c *Client) DownloadBackup(ctx context.Context, link, savePath string, prog
 	_, copyErr := io.Copy(file, pr)
 	stall.Stop()
 	if copyErr != nil {
-		return fmt.Errorf("загрузка прервана: %w", copyErr)
+		return "", fmt.Errorf("загрузка прервана: %w", copyErr)
 	}
 	if expected > 0 && written != expected {
-		return fmt.Errorf("загрузка неполная: %d из %d байт", written, expected)
+		return "", fmt.Errorf("загрузка неполная: %d из %d байт", written, expected)
 	}
 	if err := file.Close(); err != nil {
-		return err
+		return "", err
 	}
-	if err := os.Rename(partPath, savePath); err != nil {
-		return err
+
+	finalPath := basePath + detectExtension(partPath)
+	if err := os.Rename(partPath, finalPath); err != nil {
+		return "", err
 	}
-	return nil
+	return finalPath, nil
 }
+
+// detectExtension определяет расширение файла по первым байтам содержимого.
+func detectExtension(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ".zip"
+	}
+	defer f.Close()
+
+	var b [8]byte
+	n, _ := f.Read(b[:])
+	if n >= 4 && b[0] == 'P' && b[1] == 'K' && b[2] == 0x03 && b[3] == 0x04 {
+		return ".zip"
+	}
+	if n >= 3 && b[0] == 'B' && b[1] == 'Z' && b[2] == 'h' {
+		return ".bz2"
+	}
+	if n >= 2 && b[0] == 0x1F && b[1] == 0x8B {
+		return ".gz"
+	}
+	if n >= 4 && b[0] == '7' && b[1] == 'z' && b[2] == 0xBC && b[3] == 0xAF {
+		return ".7z"
+	}
+	if n >= 4 && b[0] == 'R' && b[1] == 'a' && b[2] == 'r' && b[3] == '!' {
+		return ".rar"
+	}
+	return ".zip"
+}
+
+// progressReader
 
 // progressReader сообщает о каждом успешно прочитанном фрагменте
 type progressReader struct {

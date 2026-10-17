@@ -69,7 +69,8 @@ func (c *Cleaner) cleanAppDir(appDir string) int {
 		if f.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(strings.ToLower(f.Name()), ".zip") {
+		lower := strings.ToLower(f.Name())
+		if !strings.HasPrefix(lower, "backup_") || strings.HasSuffix(lower, ".part") {
 			continue
 		}
 		info, err := f.Info()

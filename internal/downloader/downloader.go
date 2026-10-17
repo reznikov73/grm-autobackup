@@ -119,20 +119,19 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 		return
 	}
 
-	// Сортируем по дате (последний первый)
 	sort.Slice(ready, func(i, j int) bool { return ready[i].Date > ready[j].Date })
 	latest := ready[0]
 
-	filename := backupFilename(latest)
+	baseName := backupBaseName(latest)
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		d.monitor.Errorf("Не удалось создать папку %s: %v", appDir, err)
 		return
 	}
-	savePath := filepath.Join(appDir, filename)
+	basePath := filepath.Join(appDir, baseName)
 
-	// Бэкап уже скачан?
-	if st, err := os.Stat(savePath); err == nil && st.Size() > 0 {
-		d.monitor.Infof("Бэкап уже существует: %s", savePath)
+	// Бэкап уже скачан (в любом формате: .zip/.bz2/...)?
+	if existing := findExistingBackup(basePath); existing != "" {
+		d.monitor.Infof("Бэкап уже существует: %s", existing)
 		return
 	}
 
@@ -140,8 +139,8 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 	if free, err := diskFreeBytes(appDir); err == nil {
 		need := estimateNeedBytes(latest.Size)
 		if free < uint64(need) {
-			d.monitor.Warnf("Недостаточно места для %s: свободно %s, нужно ~%s — пропуск",
-				savePath, humanBytes(int64(free)), humanBytes(need))
+			d.monitor.Warnf("Недостаточно места для %s.*: свободно %s, нужно ~%s — пропуск",
+				baseName, humanBytes(int64(free)), humanBytes(need))
 			return
 		}
 	} else {
@@ -156,15 +155,15 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 	}
 	d.monitor.SetCurrent(action)
 
-	partPath := savePath + ".part"
+	partPath := basePath + ".part"
 	var resumeFrom int64
 	if st, err := os.Stat(partPath); err == nil {
 		resumeFrom = st.Size()
 	}
 	if resumeFrom > 0 {
-		d.monitor.Infof("Докачка: %s (уже %s)", savePath, humanBytes(resumeFrom))
+		d.monitor.Infof("Докачка: %s (уже %s)", baseName, humanBytes(resumeFrom))
 	} else {
-		d.monitor.Infof("Скачивание: %s (%.1f МБ по данным API)", savePath, latest.Size)
+		d.monitor.Infof("Скачивание: %s (в API: %.1f МБ)", baseName, latest.Size)
 	}
 
 	var (
@@ -173,7 +172,7 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 		lastWritten int64
 		speed       float64
 	)
-	err = client.DownloadBackup(ctx, latest.Link, savePath, func(written, total int64) {
+	finalPath, err := client.DownloadBackup(ctx, latest.Link, basePath, func(written, total int64) {
 		now := time.Now()
 		if lastTime.IsZero() {
 			lastTime = now
@@ -199,7 +198,7 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 		d.monitor.UpdateProgress(app.ID, percent, speed, written, total)
 	})
 	if err != nil {
-		d.monitor.Errorf("Ошибка скачивания %s: %v", filename, err)
+		d.monitor.Errorf("Ошибка скачивания %s: %v", baseName, err)
 		d.monitor.SetCurrent(&monitor.Action{
 			ID:          app.ID,
 			Type:        monitor.StatusError,
@@ -221,9 +220,9 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 	})
 	d.monitor.SetCurrent(&monitor.Action{Type: monitor.StatusIdle})
 
-	if st, err := os.Stat(savePath); err == nil {
-		d.monitor.Infof("Бэкап сохранен: %s (%s)", savePath, humanBytes(st.Size()))
+	if st, err := os.Stat(finalPath); err == nil {
+		d.monitor.Infof("Бэкап сохранен: %s (%s)", finalPath, humanBytes(st.Size()))
 	} else {
-		d.monitor.Infof("Бэкап сохранен: %s", savePath)
+		d.monitor.Infof("Бэкап сохранен: %s", finalPath)
 	}
 }

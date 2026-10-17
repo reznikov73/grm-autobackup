@@ -2,6 +2,7 @@ package downloader
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -80,10 +81,11 @@ func uniqueFolders(ids []string, names map[string]string) map[string]string {
 	return result
 }
 
-// backupFilename формирует имя файла бэкапа: backup_2026-10-15_10-51-28.zip
-func backupFilename(b api.Backup) string {
+// backupBaseName формирует базовое имя файла бэкапа без расширения:
+// backup_2026-10-15_10-51-28 (расширение определяется по фактическому формату файла).
+func backupBaseName(b api.Backup) string {
 	if t, err := time.Parse(time.RFC3339, b.Date); err == nil {
-		return "backup_" + t.UTC().Format("2006-01-02_15-04-05") + ".zip"
+		return "backup_" + t.UTC().Format("2006-01-02_15-04-05")
 	}
 	s := b.Date
 	if len(s) >= 10 {
@@ -93,7 +95,21 @@ func backupFilename(b api.Backup) string {
 	if s == "" {
 		s = shortID(b.ID)
 	}
-	return "backup_" + s + ".zip"
+	return "backup_" + s
+}
+
+// knownBackupExts — возможные расширения скачанных бэкапов
+var knownBackupExts = []string{".zip", ".bz2", ".gz", ".7z", ".rar"}
+
+// findExistingBackup ищет уже скачанный бэкап с любым из известных расширений.
+func findExistingBackup(basePath string) string {
+	for _, ext := range knownBackupExts {
+		p := basePath + ext
+		if st, err := os.Stat(p); err == nil && st.Size() > 0 {
+			return p
+		}
+	}
+	return ""
 }
 
 // estimateNeedBytes оценивает требуемое место: размер из API (МБ, с запасом)
