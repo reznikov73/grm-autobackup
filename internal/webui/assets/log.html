@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta charset="utf-8">
+<title>Лог</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="topbar">
+  <h1>Лог — 1С:ГРМ AutoBackup</h1>
+  <div class="right">
+    <select class="txt" id="level" style="width:110px; height:30px;" onchange="poll()">
+      <option value="ALL">Все</option>
+      <option value="DEBUG">DEBUG</option>
+      <option value="INFO">INFO</option>
+      <option value="WARN">WARN</option>
+      <option value="ERROR">ERROR</option>
+    </select>
+    <input class="txt" id="q" type="text" style="width:200px; height:30px;" placeholder="Поиск по тексту…" onkeyup="poll()">
+    <label class="row" style="display:inline-block; padding:0 8px; vertical-align:middle;"><input type="checkbox" id="auto" checked> <span class="nm">Автоскролл</span></label>
+    <button class="btn" onclick="poll()">Обновить</button>
+    <button class="btn" onclick="doClear()">Очистить</button>
+    <button class="btn" onclick="doClose()">Закрыть</button>
+  </div>
+</div>
+<pre class="log" id="log"></pre>
+<script>
+var KEY = (function () {
+  var m = /[?&]k=([^&]+)/.exec(window.location.search);
+  return m ? decodeURIComponent(m[1]) : '';
+})();
+
+function api(method, path, body, cb) {
+  var x = new XMLHttpRequest();
+  var sep = path.indexOf('?') >= 0 ? '&' : '?';
+  x.open(method, path + sep + 'k=' + encodeURIComponent(KEY), true);
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.onreadystatechange = function () {
+    if (x.readyState !== 4) { return; }
+    if (x.status >= 200 && x.status < 300) {
+      var data = null;
+      try { data = JSON.parse(x.responseText); } catch (e) { data = null; }
+      cb(null, data);
+    } else {
+      cb(x.responseText || ('HTTP ' + x.status), null);
+    }
+  };
+  x.send(body ? JSON.stringify(body) : null);
+}
+
+function $(id) { return document.getElementById(id); }
+
+function poll() {
+  var level = $('level').value || 'ALL';
+  var q = $('q').value || '';
+  var path = '/api/logs?level=' + encodeURIComponent(level) + '&q=' + encodeURIComponent(q);
+  api('GET', path, null, function (err, d) {
+    if (err || !d) { return; }
+    var el = $('log');
+    el.textContent = (d.lines || []).join('\n');
+    if ($('auto').checked) {
+      el.scrollTop = el.scrollHeight;
+    }
+  });
+}
+
+function doClear() {
+  api('POST', '/api/logs/clear', null, function () { poll(); });
+}
+
+function doClose() {
+  api('POST', '/api/close', { page: 'log' }, function () {});
+}
+
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>

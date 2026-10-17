@@ -11,6 +11,7 @@ import (
 	"grm-autobackup/internal/monitor"
 	"grm-autobackup/internal/scheduler"
 	"grm-autobackup/internal/ui"
+	"grm-autobackup/internal/webui"
 )
 
 func main() {
@@ -79,22 +80,33 @@ func main() {
 
 	s := scheduler.New(cfg, m)
 
+	// Локальный сервер HTML-интерфейса (127.0.0.1, случайный порт и ключ).
+	webSrv, webErr := webui.Start(cfg, cfgPath, s, m)
+	if webErr != nil {
+		m.Errorf("Не удалось запустить сервер интерфейса: %v", webErr)
+	}
+	defer func() {
+		if webSrv != nil {
+			webSrv.Stop()
+		}
+	}()
+
 	// Тестовый хук для автотестов: GRM_TEST_WINDOW=settings|monitor|log
 	if w := os.Getenv("GRM_TEST_WINDOW"); w != "" {
 		go func() {
 			time.Sleep(3 * time.Second)
 			switch w {
 			case "settings":
-				ui.OpenSettingsWindow(cfg, cfgPath, s, m)
+				ui.OpenSettingsWindow(cfg, cfgPath, s, m, webSrv)
 			case "monitor":
-				ui.OpenMonitorWindow(s, m)
+				ui.OpenMonitorWindow(s, m, webSrv)
 			case "log":
-				ui.OpenLogWindow(m)
+				ui.OpenLogWindow(m, webSrv)
 			}
 		}()
 	}
 
-	if err := ui.RunTray(cfg, cfgPath, s, m); err != nil {
+	if err := ui.RunTray(cfg, cfgPath, s, m, webSrv); err != nil {
 		m.Errorf("Ошибка запуска UI: %v", err)
 	}
 

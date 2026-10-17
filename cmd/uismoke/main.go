@@ -10,6 +10,7 @@ import (
 	"grm-autobackup/internal/monitor"
 	"grm-autobackup/internal/scheduler"
 	"grm-autobackup/internal/ui"
+	"grm-autobackup/internal/webui"
 )
 
 // uismoke — служебный помощник для проверки окон UI.
@@ -34,13 +35,20 @@ func main() {
 	m := monitor.New()
 	s := scheduler.New(cfg, m)
 
+	srv, err := webui.Start(cfg, cfgPath, s, m)
+	if err != nil {
+		fmt.Println("ошибка запуска сервера интерфейса:", err)
+		os.Exit(1)
+	}
+	defer srv.Stop()
+
 	switch which {
 	case "settings":
-		ui.OpenSettingsWindow(cfg, cfgPath, s, m)
+		ui.OpenSettingsWindow(cfg, cfgPath, s, m, srv)
 	case "monitor":
-		ui.OpenMonitorWindow(s, m)
+		ui.OpenMonitorWindow(s, m, srv)
 	case "log":
-		ui.OpenLogWindow(m)
+		ui.OpenLogWindow(m, srv)
 	default:
 		fmt.Println("неизвестное окно:", which)
 		os.Exit(2)

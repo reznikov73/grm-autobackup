@@ -9,11 +9,12 @@ import (
 	"grm-autobackup/internal/config"
 	"grm-autobackup/internal/monitor"
 	"grm-autobackup/internal/scheduler"
+	"grm-autobackup/internal/webui"
 	"grm-autobackup/resources/icons"
 )
 
 // RunTray запускает трей-приложение
-func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *monitor.Monitor) error {
+func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *monitor.Monitor, srv *webui.Server) error {
 	m.Infof("Запуск трей-приложения")
 
 	systray.Run(func() {
@@ -43,13 +44,13 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 					s.RunNow()
 				case <-menSettings.ClickedCh:
 					m.Infof("Меню: настройки")
-					OpenSettingsWindow(cfg, cfgPath, s, m)
+					OpenSettingsWindow(cfg, cfgPath, s, m, srv)
 				case <-menMonitor.ClickedCh:
 					m.Infof("Меню: монитор действий")
-					OpenMonitorWindow(s, m)
+					OpenMonitorWindow(s, m, srv)
 				case <-menLog.ClickedCh:
 					m.Infof("Меню: лог")
-					OpenLogWindow(m)
+					OpenLogWindow(m, srv)
 				case <-menQuit.ClickedCh:
 					m.Infof("Меню: выход")
 					s.Stop()

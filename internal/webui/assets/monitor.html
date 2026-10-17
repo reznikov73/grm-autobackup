@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta charset="utf-8">
+<title>Монитор действий</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="topbar">
+  <h1>Монитор действий — 1С:ГРМ AutoBackup</h1>
+  <div class="right">
+    <button class="btn primary" onclick="doRefresh()">Обновить сейчас</button>
+    <button class="btn" onclick="doClose()">Закрыть</button>
+  </div>
+</div>
+<div style="position:absolute; top:54px; left:0; right:0; bottom:0; overflow-y:auto;">
+  <div class="card">
+    <h2 id="tstatus">Ожидание</h2>
+    <div class="pbar"><div class="fill" id="pfill"></div></div>
+    <div class="muted" id="detail">—</div>
+    <div class="muted" id="next" style="margin-top:6px;">Следующий запуск: —</div>
+  </div>
+  <div class="card">
+    <h2>Последние операции</h2>
+    <div id="hist"><div class="muted">Пока пусто</div></div>
+  </div>
+  <div style="height:12px;"></div>
+</div>
+<script>
+var KEY = (function () {
+  var m = /[?&]k=([^&]+)/.exec(window.location.search);
+  return m ? decodeURIComponent(m[1]) : '';
+})();
+
+function api(method, path, body, cb) {
+  var x = new XMLHttpRequest();
+  var sep = path.indexOf('?') >= 0 ? '&' : '?';
+  x.open(method, path + sep + 'k=' + encodeURIComponent(KEY), true);
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.onreadystatechange = function () {
+    if (x.readyState !== 4) { return; }
+    if (x.status >= 200 && x.status < 300) {
+      var data = null;
+      try { data = JSON.parse(x.responseText); } catch (e) { data = null; }
+      cb(null, data);
+    } else {
+      cb(x.responseText || ('HTTP ' + x.status), null);
+    }
+  };
+  x.send(body ? JSON.stringify(body) : null);
+}
+
+function $(id) { return document.getElementById(id); }
+
+function fmtBytes(n) {
+  var units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+  var f = n, i = 0;
+  while (f >= 1024 && i < units.length - 1) { f = f / 1024; i++; }
+  return (i === 0 ? Math.round(f) : f.toFixed(1)) + ' ' + units[i];
+}
+
+function fmtEta(s) {
+  s = Math.round(s);
+  var h = Math.floor(s / 3600);
+  var m = Math.floor((s % 3600) / 60);
+  if (h > 0) { return h + ' ч ' + m + ' мин'; }
+  if (m > 0) { return m + ' мин ' + (s % 60) + ' с'; }
+  return s + ' с';
+}
+
+function poll() {
+  api('GET', '/api/state', null, function (err, d) {
+    if (err || !d) { return; }
+    var st = 'Ожидание';
+    if (d.type === 'downloading') { st = 'Скачивание: ' + d.description; }
+    else if (d.type === 'cleaning') { st = 'Очистка старых бэкапов…'; }
+    else if (d.type === 'error') { st = 'Ошибка: ' + d.error; }
+    $('tstatus').innerHTML = '';
+    $('tstatus').appendChild(document.createTextNode(st));
+
+    var pct = Math.max(0, Math.min(100, Math.round(d.progress || 0)));
+    $('pfill').style.width = pct + '%';
+
+    var det = '—';
+    if (d.type === 'downloading') {
+      det = pct + '%';
+      if (d.speed > 0) { det += ' · ' + fmtBytes(d.speed) + '/с'; }
+      if (d.total > 0 && d.speed > 0 && d.written < d.total) {
+        det += ' · осталось ' + fmtEta((d.total - d.written) / d.speed);
+      }
+    }
+    $('detail').innerHTML = '';
+    $('detail').appendChild(document.createTextNode(det));
+    $('next').innerHTML = d.nextRun ? ('Следующий запуск: ' + d.nextRun) : 'Следующий запуск: —';
+
+    var h = $('hist');
+    h.innerHTML = '';
+    if (!d.history || d.history.length === 0) {
+      h.innerHTML = '<div class="muted">Пока пусто</div>';
+      return;
+    }
+    var i;
+    for (i = 0; i < d.history.length; i++) {
+      var it = d.history[i];
+      var row = document.createElement('div');
+      row.className = 'hrow';
+      var t = document.createElement('span');
+      t.className = 't';
+      t.appendChild(document.createTextNode(it.time));
+      row.appendChild(t);
+      var dd = document.createElement('span');
+      dd.className = 'd';
+      dd.appendChild(document.createTextNode(it.desc));
+      row.appendChild(dd);
+      var r = document.createElement('span');
+      r.className = 'r' + (it.result === 'ошибка' ? ' err' : '');
+      r.appendChild(document.createTextNode(it.result));
+      row.appendChild(r);
+      h.appendChild(row);
+    }
+  });
+}
+
+function doRefresh() {
+  api('POST', '/api/refresh', null, function () {});
+}
+
+function doClose() {
+  api('POST', '/api/close', { page: 'monitor' }, function () {});
+}
+
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

@@ -67,11 +67,15 @@ rsrc -manifest grm-autobackup.manifest -ico resources/icons/app.ico -o rsrc.syso
 | `logging.file` | Путь к логу (относительный — от корня проекта) |
 | `logging.max_size_mb` / `logging.max_backups` | Ротация лога |
 
+## Интерфейс
+
+Окна «Настройки», «Монитор действий» и «Лог» — единый HTML-интерфейс (встроенный WebView). Данные отдаёт локальный сервер на 127.0.0.1 со случайным портом и одноразовым ключом доступа; действия — через JSON-API.
+
 ## Служебное
 
 - Тестовый помощник окон: `go build -o uismoke.exe ./cmd/uismoke` →
   `uismoke.exe settings|monitor|log`.
 - Тестовые хуки: `GRM_TEST_WINDOW=settings|monitor|log` открывает окно через
-  3 секунды после старта; `GRM_TEST_TAB=0..3` — выбор вкладки окна настроек.
+  3 секунды после старта.
 
 Документация: `docs/TZ.md`, `docs/API.md`.

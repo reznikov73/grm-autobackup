@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta charset="utf-8">
+<title>Настройки</title>
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+<div class="topbar">
+  <h1>Настройки — 1С:ГРМ AutoBackup</h1>
+  <div class="right">
+    <button class="btn primary" id="btnSave" onclick="doSave()">Сохранить</button>
+    <button class="btn" onclick="doClose()">Закрыть</button>
+  </div>
+</div>
+<div style="position:absolute; top:54px; bottom:52px; left:0; right:0; overflow-y:auto;">
+  <div class="card">
+    <h2>Подключение</h2>
+    <label class="fl">URL API</label>
+    <input class="txt" id="url" type="text">
+    <label class="fl">JWT токен</label>
+    <input class="txt" id="jwt" type="text">
+    <div class="muted" style="margin-top:8px;">Токен выдаётся в личном кабинете 1С:ГРМ (Partner API v2).</div>
+  </div>
+  <div class="card">
+    <h2>Расписание</h2>
+    <div class="duo">
+      <div class="c left" style="width:44%;">
+        <label class="fl">Режим</label>
+        <select class="txt" id="mode" style="width:100%;">
+          <option value="interval">Каждые N часов</option>
+          <option value="daily">Ежедневно в указанное время</option>
+        </select>
+      </div>
+      <div class="c left" style="width:26%;">
+        <label class="fl">Интервал, часов</label>
+        <input class="txt" id="interval" style="width:100%;" type="text">
+      </div>
+      <div class="c" style="width:30%;">
+        <label class="fl">Время (ЧЧ:ММ)</label>
+        <input class="txt" id="start" style="width:100%;" type="text">
+      </div>
+    </div>
+    <label class="row" style="margin-top:10px;"><input type="checkbox" id="stopped"> <span class="nm">Обрабатывать и остановленные приложения</span></label>
+  </div>
+  <div class="card">
+    <h2>Хранилище и журнал</h2>
+    <label class="fl">Папка сохранения бэкапов</label>
+    <input class="txt" id="path" type="text">
+    <div class="duo" style="margin-top:4px;">
+      <div class="c left" style="width:50%;">
+        <label class="fl">Лимит бэкапов на приложение</label>
+        <input class="txt" id="limit" style="width:100%;" type="text">
+      </div>
+      <div class="c" style="width:50%;">
+        <label class="fl">Уровень лога</label>
+        <select class="txt" id="level" style="width:100%;">
+          <option value="debug">debug</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+      </div>
+    </div>
+    <label class="row" style="margin-top:10px;"><input type="checkbox" id="autostart"> <span class="nm">Автозапуск при входе в Windows</span></label>
+  </div>
+  <div class="card">
+    <h2>Выбор приложений</h2>
+    <div style="margin-bottom:8px;">
+      <input class="txt" id="search" style="width:300px; display:inline-block; vertical-align:middle;" type="text" placeholder="Поиск по клиенту или конфигурации…" onkeyup="applyFilter()">
+      <button class="btn primary" style="vertical-align:middle;" onclick="loadApps(true)">Обновить из API</button>
+      <button class="btn" style="vertical-align:middle;" onclick="checkAll(true)">Все</button>
+      <button class="btn" style="vertical-align:middle;" onclick="checkAll(false)">Снять все</button>
+      <span id="counter" class="muted" style="margin-left:10px; vertical-align:middle;"></span>
+    </div>
+    <div id="apps"><div class="muted">Загрузка списка приложений…</div></div>
+  </div>
+  <div style="height:12px;"></div>
+</div>
+<div class="footer">
+  <span id="status" class="muted">Готово</span>
+  <div class="right"><span id="selectedInfo" class="muted"></span></div>
+</div>
+<div id="toast" class="toast"></div>
+<script>
+var KEY = (function () {
+  var m = /[?&]k=([^&]+)/.exec(window.location.search);
+  return m ? decodeURIComponent(m[1]) : '';
+})();
+
+var checked = {};
+var groups = [];
+
+function api(method, path, body, cb) {
+  var x = new XMLHttpRequest();
+  var sep = path.indexOf('?') >= 0 ? '&' : '?';
+  x.open(method, path + sep + 'k=' + encodeURIComponent(KEY), true);
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.onreadystatechange = function () {
+    if (x.readyState !== 4) { return; }
+    if (x.status >= 200 && x.status < 300) {
+      var data = null;
+      try { data = JSON.parse(x.responseText); } catch (e) { data = null; }
+      cb(null, data);
+    } else {
+      cb(x.responseText || ('HTTP ' + x.status), null);
+    }
+  };
+  x.send(body ? JSON.stringify(body) : null);
+}
+
+function $(id) { return document.getElementById(id); }
+function val(id) { var e = $(id); return e ? e.value : ''; }
+
+function toast(msg, isErr) {
+  var t = $('toast');
+  t.className = isErr ? 'toast err' : 'toast';
+  t.innerHTML = '';
+  t.appendChild(document.createTextNode(msg));
+  t.style.display = 'block';
+  setTimeout(function () { t.style.display = 'none'; }, 2200);
+}
+
+function loadSettings() {
+  api('GET', '/api/settings', null, function (err, d) {
+    if (err || !d) { $('status').innerHTML = 'Ошибка загрузки настроек'; return; }
+    $('url').value = (d.api && d.api.url) || '';
+    $('jwt').value = (d.api && d.api.jwt) || '';
+    $('mode').value = (d.schedule && d.schedule.mode === 'daily') ? 'daily' : 'interval';
+    $('interval').value = (d.schedule && d.schedule.interval) || 6;
+    $('start').value = (d.schedule && d.schedule.start) || '00:00';
+    $('path').value = (d.storage && d.storage.path) || '';
+    $('limit').value = (d.storage && d.storage.limit) || 7;
+    $('level').value = d.level || 'info';
+    $('stopped').checked = !!d.includeStopped;
+    $('autostart').checked = !!d.autostart;
+    $('status').innerHTML = 'Настройки загружены';
+  });
+}
+
+function loadApps(resetState) {
+  $('apps').innerHTML = '<div class="muted">Загрузка списка приложений…</div>';
+  api('GET', '/api/apps', null, function (err, d) {
+    if (err || !d) {
+      $('apps').innerHTML = '';
+      $('apps').appendChild(document.createTextNode('Ошибка загрузки: ' + err));
+      return;
+    }
+    groups = d.customers || [];
+    if (resetState) {
+      checked = {};
+      var i;
+      for (i = 0; i < (d.initial || []).length; i++) { checked[d.initial[i]] = true; }
+    }
+    renderApps();
+  });
+}
+
+function renderApps() {
+  var host = $('apps');
+  host.innerHTML = '';
+  var g, a;
+  for (g = 0; g < groups.length; g++) {
+    var grp = groups[g];
+    var head = document.createElement('div');
+    head.className = 'ghead';
+    head.appendChild(document.createTextNode(grp.name));
+    var cnt = document.createElement('span');
+    cnt.className = 'cnt';
+    cnt.appendChild(document.createTextNode('· приложений: ' + grp.apps.length));
+    head.appendChild(cnt);
+    host.appendChild(head);
+    for (a = 0; a < grp.apps.length; a++) {
+      var app = grp.apps[a];
+      var row = document.createElement('label');
+      row.className = 'row';
+      row.setAttribute('data-name', (grp.name + ' ' + app.name + ' ' + app.status).toLowerCase());
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!checked[app.id];
+      cb.setAttribute('data-id', app.id);
+      cb.onchange = (function (id, box) {
+        return function () { checked[id] = box.checked; updateCounter(); };
+      })(app.id, cb);
+      row.appendChild(cb);
+      var nm = document.createElement('span');
+      nm.className = 'nm';
+      nm.appendChild(document.createTextNode(app.name));
+      row.appendChild(nm);
+      var pill = document.createElement('span');
+      pill.className = 'pill ' + (app.status === 'running' ? 'run' : 'stop');
+      pill.appendChild(document.createTextNode(app.status === 'running' ? 'работает' : 'остановлено'));
+      row.appendChild(pill);
+      host.appendChild(row);
+    }
+  }
+  if (groups.length === 0) {
+    host.innerHTML = '<div class="muted">Список пуст — нажмите «Обновить из API»</div>';
+  }
+  updateCounter();
+}
+
+function applyFilter() {
+  var q = ($('search').value || '').toLowerCase();
+  var rows = $('apps').getElementsByTagName('label');
+  var i;
+  for (i = 0; i < rows.length; i++) {
+    var nm = rows[i].getAttribute('data-name') || '';
+    rows[i].style.display = (q === '' || nm.indexOf(q) >= 0) ? 'block' : 'none';
+  }
+  var heads = $('apps').getElementsByTagName('div');
+  for (i = 0; i < heads.length; i++) {
+    var h = heads[i];
+    if (h.className !== 'ghead') { continue; }
+    var vis = false;
+    var n = h.nextSibling;
+    while (n && n.className === 'row') {
+      if (n.style.display !== 'none') { vis = true; break; }
+      n = n.nextSibling;
+    }
+    h.style.display = vis ? 'block' : 'none';
+  }
+}
+
+function checkAll(on) {
+  var rows = $('apps').getElementsByTagName('label');
+  var i, cb;
+  for (i = 0; i < rows.length; i++) {
+    if (rows[i].style.display === 'none') { continue; }
+    cb = rows[i].getElementsByTagName('input')[0];
+    if (!cb) { continue; }
+    cb.checked = on;
+    checked[cb.getAttribute('data-id')] = on;
+  }
+  updateCounter();
+}
+
+function updateCounter() {
+  var n = 0, k;
+  for (k in checked) {
+    if (checked.hasOwnProperty(k) && checked[k]) { n++; }
+  }
+  $('counter').innerHTML = 'Отмечено: ' + n;
+  $('selectedInfo').innerHTML = 'Выбрано приложений: ' + n;
+}
+
+function doSave() {
+  var ids = [], k;
+  for (k in checked) {
+    if (checked.hasOwnProperty(k) && checked[k]) { ids.push(k); }
+  }
+  var req = {
+    url: val('url'),
+    jwt: val('jwt'),
+    path: val('path'),
+    limit: parseFloat(val('limit')) || 0,
+    mode: val('mode'),
+    interval: parseFloat(val('interval')) || 0,
+    start: val('start'),
+    includeStopped: $('stopped').checked,
+    autostart: $('autostart').checked,
+    level: val('level'),
+    checked: ids
+  };
+  $('status').innerHTML = 'Сохранение…';
+  api('POST', '/api/save', req, function (err, d) {
+    if (err) { $('status').innerHTML = 'Ошибка'; toast('Ошибка: ' + err, true); return; }
+    if (!d || !d.ok) { $('status').innerHTML = 'Ошибка'; toast('Ошибка: ' + ((d && d.error) || 'неизвестно'), true); return; }
+    $('status').innerHTML = 'Сохранено';
+    toast('Сохранено');
+    if (d.autostartWarning) { toast('Автозапуск: ' + d.autostartWarning, true); }
+  });
+}
+
+function doClose() {
+  api('POST', '/api/close', { page: 'settings' }, function () {});
+}
+
+loadSettings();
+loadApps(true);
+</script>
+</body>
+</html>
