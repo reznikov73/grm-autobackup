@@ -12,9 +12,15 @@ import (
 	"grm-autobackup/internal/scheduler"
 	"grm-autobackup/internal/ui"
 	"grm-autobackup/internal/webui"
+	"grm-autobackup/internal/winutil"
 )
 
 func main() {
+	// Одна копия приложения
+	if !winutil.EnsureSingleInstance("1С:ГРМ AutoBackup", "Приложение уже запущено — смотрите значок в системном трее.") {
+		return
+	}
+
 	exePath, err := os.Executable()
 	if err != nil {
 		exePath = os.Args[0]

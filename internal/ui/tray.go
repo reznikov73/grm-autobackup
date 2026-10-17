@@ -23,14 +23,14 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 		systray.SetTitle("1С:ГРМ AutoBackup")
 
 		// Меню
-		menRefresh := systray.AddMenuItem("🔄 Обновить сейчас", "Запустить бэкап вручную")
-		menSettings := systray.AddMenuItem("⚙ Настройки", "Открыть настройки")
-		menMonitor := systray.AddMenuItem("📊 Монитор действий", "Показать текущие операции")
-		menLog := systray.AddMenuItem("📝 Лог", "Открыть журнал")
+		menRefresh := systray.AddMenuItem("Обновить сейчас", "Запустить бэкап вручную")
+		menSettings := systray.AddMenuItem("Настройки", "Открыть настройки")
+		menMonitor := systray.AddMenuItem("Монитор действий", "Показать текущие операции")
+		menLog := systray.AddMenuItem("Лог", "Открыть журнал")
 		systray.AddSeparator()
 		menStatus := systray.AddMenuItem("Статус: работает", "Статус работы")
 		systray.AddSeparator()
-		menQuit := systray.AddMenuItem("❌ Выход", "Закрыть приложение")
+		menQuit := systray.AddMenuItem("Выход", "Закрыть приложение")
 
 		// Запуск планировщика
 		s.Start()

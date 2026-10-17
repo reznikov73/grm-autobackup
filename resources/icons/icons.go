@@ -41,6 +41,6 @@ func Downloading(percent float64) []byte {
 	if p > 100 {
 		p = 100
 	}
-	p = (p / 10) * 10
+	p = (p / 5) * 5
 	return mustRead(fmt.Sprintf("downloading_%03d.ico", p))
 }
