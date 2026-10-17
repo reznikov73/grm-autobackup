@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 
@@ -35,7 +37,31 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 		}
 
 		centerForm(dlg, 940, 720)
-		if err := wv.SetURL(srv.URL("settings")); err != nil {
+
+		// Диалог выбора папки выполняется на UI-потоке окна.
+		srv.RegisterFolderPicker("settings", func() (string, error) {
+			var (
+				path string
+				ok   bool
+			)
+			done := make(chan struct{})
+			dlg.Synchronize(func() {
+				path, ok = pickFolder(uintptr(dlg.Handle()), "Выберите папку для сохранения бэкапов")
+				close(done)
+			})
+			<-done
+			if !ok {
+				return "", nil // отмена выбора
+			}
+			return path, nil
+		})
+
+		pageURL := srv.URL("settings")
+		// Тестовый хук: открыть сразу вкладку «Выбор приложений»
+		if os.Getenv("GRM_TEST_SETTINGS_TAB") == "apps" {
+			pageURL += "#apps"
+		}
+		if err := wv.SetURL(pageURL); err != nil {
 			return nil, err
 		}
 
@@ -46,6 +72,7 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 		return func() int {
 			ret := dlg.Run()
 			srv.UnregisterCloser("settings")
+			srv.UnregisterFolderPicker("settings")
 			return ret
 		}, nil
 	})

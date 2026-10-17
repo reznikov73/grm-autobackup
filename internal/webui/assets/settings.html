@@ -14,69 +14,91 @@
     <button class="btn" onclick="doClose()">Закрыть</button>
   </div>
 </div>
-<div style="position:absolute; top:54px; bottom:52px; left:0; right:0; overflow-y:auto;">
-  <div class="card">
-    <h2>Подключение</h2>
-    <label class="fl">URL API</label>
-    <input class="txt" id="url" type="text">
-    <label class="fl">JWT токен</label>
-    <input class="txt" id="jwt" type="text">
-    <div class="muted" style="margin-top:8px;">Токен выдаётся в личном кабинете 1С:ГРМ (Partner API v2).</div>
-  </div>
-  <div class="card">
-    <h2>Расписание</h2>
-    <div class="duo">
-      <div class="c left" style="width:44%;">
-        <label class="fl">Режим</label>
-        <select class="txt" id="mode" style="width:100%;">
-          <option value="interval">Каждые N часов</option>
-          <option value="daily">Ежедневно в указанное время</option>
-        </select>
-      </div>
-      <div class="c left" style="width:26%;">
-        <label class="fl">Интервал, часов</label>
-        <input class="txt" id="interval" style="width:100%;" type="text">
-      </div>
-      <div class="c" style="width:30%;">
-        <label class="fl">Время (ЧЧ:ММ)</label>
-        <input class="txt" id="start" style="width:100%;" type="text">
-      </div>
+<div class="tabs">
+  <div class="tab active" id="tab0" onclick="showTab(0)">Настройки</div>
+  <div class="tab" id="tab1" onclick="showTab(1)">Выбор приложений</div>
+</div>
+<div style="position:absolute; top:92px; bottom:52px; left:0; right:0; overflow-y:auto;">
+  <div class="tabpage active" id="page0">
+    <div class="card">
+      <h2>Подключение</h2>
+      <label class="fl">URL API</label>
+      <input class="txt" id="url" type="text">
+      <label class="fl">JWT токен</label>
+      <input class="txt" id="jwt" type="text">
+      <div class="muted" style="margin-top:8px;">Токен выдаётся в личном кабинете 1С:ГРМ (Partner API v2).</div>
     </div>
-    <label class="row" style="margin-top:10px;"><input type="checkbox" id="stopped"> <span class="nm">Обрабатывать и остановленные приложения</span></label>
-  </div>
-  <div class="card">
-    <h2>Хранилище и журнал</h2>
-    <label class="fl">Папка сохранения бэкапов</label>
-    <input class="txt" id="path" type="text">
-    <div class="duo" style="margin-top:4px;">
-      <div class="c left" style="width:50%;">
-        <label class="fl">Лимит бэкапов на приложение</label>
-        <input class="txt" id="limit" style="width:100%;" type="text">
+    <div class="card">
+      <h2>Расписание</h2>
+      <div class="duo">
+        <div class="c left" style="width:40%;">
+          <label class="fl">Режим</label>
+          <select class="txt" id="mode" style="width:100%;">
+            <option value="interval">Каждые N часов</option>
+            <option value="daily">Ежедневно в указанное время</option>
+          </select>
+        </div>
+        <div class="c left" style="width:24%;">
+          <label class="fl">Интервал, часов</label>
+          <span class="stepper">
+            <button class="btn sbtn" onclick="stepNum('interval', -1, 1, 720)">−</button>
+            <input class="txt" id="interval" type="text" value="6" onkeydown="return onlyDigits(event)" onkeyup="sanitizeNum(this)">
+            <button class="btn sbtn" onclick="stepNum('interval', 1, 1, 720)">+</button>
+          </span>
+        </div>
+        <div class="c" style="width:36%;">
+          <label class="fl">Время</label>
+          <span class="timebox">
+            <select class="txt" id="hour"></select><span class="sep">:</span><select class="txt" id="minute"></select>
+          </span>
+        </div>
       </div>
-      <div class="c" style="width:50%;">
-        <label class="fl">Уровень лога</label>
-        <select class="txt" id="level" style="width:100%;">
-          <option value="debug">debug</option>
-          <option value="info">info</option>
-          <option value="warn">warn</option>
-          <option value="error">error</option>
-        </select>
+      <label class="row" style="margin-top:10px;"><input type="checkbox" id="stopped"> <span class="nm">Обрабатывать и остановленные приложения</span></label>
+    </div>
+    <div class="card">
+      <h2>Хранилище и журнал</h2>
+      <label class="fl">Папка сохранения бэкапов</label>
+      <div class="pathrow">
+        <div class="pc"><input class="txt" id="path" type="text"></div>
+        <div class="pc btncell"><button class="btn" style="margin-left:0;" onclick="pickPath()" title="Выбрать папку…">…</button></div>
       </div>
+      <div class="duo" style="margin-top:4px;">
+        <div class="c left" style="width:50%;">
+          <label class="fl">Лимит бэкапов на приложение</label>
+          <span class="stepper">
+            <button class="btn sbtn" onclick="stepNum('limit', -1, 1, 1000)">−</button>
+            <input class="txt" id="limit" type="text" value="7" onkeydown="return onlyDigits(event)" onkeyup="sanitizeNum(this)">
+            <button class="btn sbtn" onclick="stepNum('limit', 1, 1, 1000)">+</button>
+          </span>
+        </div>
+        <div class="c" style="width:50%;">
+          <label class="fl">Уровень лога</label>
+          <select class="txt" id="level" style="width:100%;">
+            <option value="debug">debug</option>
+            <option value="info">info</option>
+            <option value="warn">warn</option>
+            <option value="error">error</option>
+          </select>
+        </div>
+      </div>
+      <label class="row" style="margin-top:10px;"><input type="checkbox" id="autostart"> <span class="nm">Автозапуск при входе в Windows</span></label>
     </div>
-    <label class="row" style="margin-top:10px;"><input type="checkbox" id="autostart"> <span class="nm">Автозапуск при входе в Windows</span></label>
+    <div style="height:12px;"></div>
   </div>
-  <div class="card">
-    <h2>Выбор приложений</h2>
-    <div style="margin-bottom:8px;">
-      <input class="txt" id="search" style="width:300px; display:inline-block; vertical-align:middle;" type="text" placeholder="Поиск по клиенту или конфигурации…" onkeyup="applyFilter()">
-      <button class="btn primary" style="vertical-align:middle;" onclick="loadApps(true)">Обновить из API</button>
-      <button class="btn" style="vertical-align:middle;" onclick="checkAll(true)">Все</button>
-      <button class="btn" style="vertical-align:middle;" onclick="checkAll(false)">Снять все</button>
-      <span id="counter" class="muted" style="margin-left:10px; vertical-align:middle;"></span>
+  <div class="tabpage" id="page1">
+    <div class="card">
+      <h2>Выбор приложений</h2>
+      <div style="margin-bottom:8px;">
+        <input class="txt" id="search" style="width:300px; display:inline-block; vertical-align:middle;" type="text" placeholder="Поиск по клиенту или конфигурации…" onkeyup="applyFilter()">
+        <button class="btn primary" style="vertical-align:middle;" onclick="loadApps(true)">Обновить из API</button>
+        <button class="btn" style="vertical-align:middle;" onclick="checkAll(true)">Все</button>
+        <button class="btn" style="vertical-align:middle;" onclick="checkAll(false)">Снять все</button>
+        <span id="counter" class="muted" style="margin-left:10px; vertical-align:middle;"></span>
+      </div>
+      <div id="apps"><div class="muted">Загрузка списка приложений…</div></div>
     </div>
-    <div id="apps"><div class="muted">Загрузка списка приложений…</div></div>
+    <div style="height:12px;"></div>
   </div>
-  <div style="height:12px;"></div>
 </div>
 <div class="footer">
   <span id="status" class="muted">Готово</span>
@@ -84,10 +106,11 @@
 </div>
 <div id="toast" class="toast"></div>
 <script>
-var KEY = (function () {
+function readKey() {
   var m = /[?&]k=([^&]+)/.exec(window.location.search);
   return m ? decodeURIComponent(m[1]) : '';
-})();
+}
+var KEY = readKey();
 
 var checked = {};
 var groups = [];
@@ -122,6 +145,71 @@ function toast(msg, isErr) {
   setTimeout(function () { t.style.display = 'none'; }, 2200);
 }
 
+function showTab(i) {
+  $('tab0').className = 'tab' + (i === 0 ? ' active' : '');
+  $('tab1').className = 'tab' + (i === 1 ? ' active' : '');
+  $('page0').className = 'tabpage' + (i === 0 ? ' active' : '');
+  $('page1').className = 'tabpage' + (i === 1 ? ' active' : '');
+}
+
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+function fillTimeSelects() {
+  var h = $('hour'), m = $('minute'), i, o;
+  for (i = 0; i < 24; i++) {
+    o = document.createElement('option'); o.value = i; o.text = pad2(i); h.appendChild(o);
+  }
+  for (i = 0; i < 60; i++) {
+    o = document.createElement('option'); o.value = i; o.text = pad2(i); m.appendChild(o);
+  }
+}
+
+function setTime(hhmm) {
+  var parts = String(hhmm || '00:00').split(':');
+  var h = parseInt(parts[0], 10); if (isNaN(h) || h < 0 || h > 23) { h = 0; }
+  var m = parseInt(parts[1], 10); if (isNaN(m) || m < 0 || m > 59) { m = 0; }
+  $('hour').value = h;
+  $('minute').value = m;
+}
+
+function getTime() {
+  return pad2(parseInt($('hour').value, 10) || 0) + ':' + pad2(parseInt($('minute').value, 10) || 0);
+}
+
+function stepNum(id, delta, min, max) {
+  var el = $(id);
+  var v = parseInt(el.value, 10);
+  if (isNaN(v)) { v = min; }
+  v = v + delta;
+  if (v < min) { v = min; }
+  if (v > max) { v = max; }
+  el.value = v;
+}
+
+function onlyDigits(e) {
+  var ev = e || window.event;
+  var k = ev.which || ev.keyCode;
+  if (k >= 48 && k <= 57) { return true; }
+  if (k === 8 || k === 9 || k === 46 || k === 37 || k === 39) { return true; }
+  return false;
+}
+
+function sanitizeNum(el) {
+  var v = el.value.replace(/[^\d]/g, '');
+  if (v !== el.value) { el.value = v; }
+}
+
+function pickPath() {
+  $('status').innerHTML = 'Выбор папки…';
+  api('POST', '/api/pickfolder', { page: 'settings' }, function (err, d) {
+    if (err) { $('status').innerHTML = 'Ошибка выбора папки'; return; }
+    if (d && d.ok && d.path) { $('path').value = d.path; $('status').innerHTML = 'Папка выбрана'; return; }
+    if (d && d.canceled) { $('status').innerHTML = 'Выбор папки отменён'; return; }
+    $('status').innerHTML = 'Ошибка выбора папки';
+    if (d && d.error) { toast('Ошибка: ' + d.error, true); }
+  });
+}
+
 function loadSettings() {
   api('GET', '/api/settings', null, function (err, d) {
     if (err || !d) { $('status').innerHTML = 'Ошибка загрузки настроек'; return; }
@@ -129,7 +217,7 @@ function loadSettings() {
     $('jwt').value = (d.api && d.api.jwt) || '';
     $('mode').value = (d.schedule && d.schedule.mode === 'daily') ? 'daily' : 'interval';
     $('interval').value = (d.schedule && d.schedule.interval) || 6;
-    $('start').value = (d.schedule && d.schedule.start) || '00:00';
+    setTime((d.schedule && d.schedule.start) || '00:00');
     $('path').value = (d.storage && d.storage.path) || '';
     $('limit').value = (d.storage && d.storage.limit) || 7;
     $('level').value = d.level || 'info';
@@ -257,7 +345,7 @@ function doSave() {
     limit: parseFloat(val('limit')) || 0,
     mode: val('mode'),
     interval: parseFloat(val('interval')) || 0,
-    start: val('start'),
+    start: getTime(),
     includeStopped: $('stopped').checked,
     autostart: $('autostart').checked,
     level: val('level'),
@@ -277,6 +365,8 @@ function doClose() {
   api('POST', '/api/close', { page: 'settings' }, function () {});
 }
 
+fillTimeSelects();
+if (window.location.hash === '#apps') { showTab(1); } else { showTab(0); }
 loadSettings();
 loadApps(true);
 </script>

@@ -38,8 +38,9 @@ type Server struct {
 	sched   *scheduler.Scheduler
 	mon     *monitor.Monitor
 
-	mu      sync.Mutex
-	closers map[string]func()
+	mu            sync.Mutex
+	closers       map[string]func()
+	folderPickers map[string]func() (string, error)
 }
 
 // Start запускает сервер на 127.0.0.1 со случайным портом и ключом доступа.
@@ -55,13 +56,14 @@ func Start(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *monito
 	}
 
 	srv := &Server{
-		ln:      ln,
-		key:     hex.EncodeToString(rawKey),
-		cfg:     cfg,
-		cfgPath: cfgPath,
-		sched:   s,
-		mon:     m,
-		closers: make(map[string]func()),
+		ln:            ln,
+		key:           hex.EncodeToString(rawKey),
+		cfg:           cfg,
+		cfgPath:       cfgPath,
+		sched:         s,
+		mon:           m,
+		closers:       make(map[string]func()),
+		folderPickers: make(map[string]func() (string, error)),
 	}
 
 	mux := http.NewServeMux()
@@ -82,6 +84,7 @@ func Start(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *monito
 	mux.HandleFunc("/api/logs/clear", srv.auth(srv.handleLogsClear))
 	mux.HandleFunc("/api/refresh", srv.auth(srv.handleRefresh))
 	mux.HandleFunc("/api/close", srv.auth(srv.handleClose))
+	mux.HandleFunc("/api/pickfolder", srv.auth(srv.handlePickFolder))
 
 	srv.httpSrv = &http.Server{Handler: mux}
 	go func() {
@@ -111,6 +114,20 @@ func (s *Server) UnregisterCloser(page string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.closers, page)
+}
+
+// RegisterFolderPicker регистрирует диалог выбора папки для страницы.
+func (s *Server) RegisterFolderPicker(page string, fn func() (string, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.folderPickers[page] = fn
+}
+
+// UnregisterFolderPicker удаляет диалог выбора папки.
+func (s *Server) UnregisterFolderPicker(page string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.folderPickers, page)
 }
 
 // Stop останавливает сервер.
@@ -504,6 +521,35 @@ func (s *Server) handleClose(w http.ResponseWriter, r *http.Request) {
 		go fn()
 	}
 	writeJSON(w, map[string]interface{}{"ok": true})
+}
+
+func (s *Server) handlePickFolder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Page string `json:"page"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req)
+
+	s.mu.Lock()
+	fn := s.folderPickers[req.Page]
+	s.mu.Unlock()
+	if fn == nil {
+		writeErr(w, "выбор папки недоступен")
+		return
+	}
+	path, err := fn()
+	if err != nil {
+		writeErr(w, err.Error())
+		return
+	}
+	if path == "" {
+		writeJSON(w, map[string]interface{}{"ok": false, "canceled": true})
+		return
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "path": path})
 }
 
 // exePath возвращает путь к исполняемому файлу.

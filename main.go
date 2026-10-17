@@ -85,6 +85,9 @@ func main() {
 	if webErr != nil {
 		m.Errorf("Не удалось запустить сервер интерфейса: %v", webErr)
 	}
+	if webSrv != nil {
+		m.Infof("Интерфейс: %s", webSrv.URL("settings"))
+	}
 	defer func() {
 		if webSrv != nil {
 			webSrv.Stop()
