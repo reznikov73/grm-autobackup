@@ -20,6 +20,7 @@
     <div class="pbar"><div class="fill" id="pfill"></div></div>
     <div class="muted" id="detail">—</div>
     <div class="muted" id="next" style="margin-top:6px;">Следующий запуск: —</div>
+    <div class="muted" id="updated" style="margin-top:4px;">—</div>
   </div>
   <div class="card">
     <h2>Последние операции</h2>
@@ -36,7 +37,7 @@ var KEY = (function () {
 function api(method, path, body, cb) {
   var x = new XMLHttpRequest();
   var sep = path.indexOf('?') >= 0 ? '&' : '?';
-  x.open(method, path + sep + 'k=' + encodeURIComponent(KEY), true);
+  x.open(method, path + sep + 'k=' + encodeURIComponent(KEY) + '&_=' + (new Date()).getTime(), true);
   x.setRequestHeader('Content-Type', 'application/json');
   x.onreadystatechange = function () {
     if (x.readyState !== 4) { return; }
@@ -69,6 +70,12 @@ function fmtEta(s) {
   return s + ' с';
 }
 
+function ts() {
+  var d = new Date();
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
 function poll() {
   api('GET', '/api/state', null, function (err, d) {
     if (err || !d) { return; }
@@ -93,6 +100,7 @@ function poll() {
     $('detail').innerHTML = '';
     $('detail').appendChild(document.createTextNode(det));
     $('next').innerHTML = d.nextRun ? ('Следующий запуск: ' + d.nextRun) : 'Следующий запуск: —';
+    $('updated').innerHTML = 'обновлено ' + ts();
 
     var h = $('hist');
     h.innerHTML = '';

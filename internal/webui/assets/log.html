@@ -34,7 +34,7 @@ var KEY = (function () {
 function api(method, path, body, cb) {
   var x = new XMLHttpRequest();
   var sep = path.indexOf('?') >= 0 ? '&' : '?';
-  x.open(method, path + sep + 'k=' + encodeURIComponent(KEY), true);
+  x.open(method, path + sep + 'k=' + encodeURIComponent(KEY) + '&_=' + (new Date()).getTime(), true);
   x.setRequestHeader('Content-Type', 'application/json');
   x.onreadystatechange = function () {
     if (x.readyState !== 4) { return; }

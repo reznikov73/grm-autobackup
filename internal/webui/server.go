@@ -86,7 +86,13 @@ func Start(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *monito
 	mux.HandleFunc("/api/close", srv.auth(srv.handleClose))
 	mux.HandleFunc("/api/pickfolder", srv.auth(srv.handlePickFolder))
 
-	srv.httpSrv = &http.Server{Handler: mux}
+	nocache := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		mux.ServeHTTP(w, r)
+	})
+	srv.httpSrv = &http.Server{Handler: nocache}
 	go func() {
 		_ = srv.httpSrv.Serve(ln)
 	}()
