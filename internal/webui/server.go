@@ -414,9 +414,16 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 // --- /api/state ---
 
 type histItem struct {
-	Time   string `json:"time"`
-	Desc   string `json:"desc"`
-	Result string `json:"result"`
+	Time     string `json:"time"`
+	Desc     string `json:"desc"`
+	Result   string `json:"result"`
+	Customer string `json:"customer,omitempty"`
+}
+
+type planItem struct {
+	Customer string `json:"customer"`
+	App      string `json:"app"`
+	Status   string `json:"status"`
 }
 
 type stateResp struct {
@@ -427,8 +434,10 @@ type stateResp struct {
 	Written     int64      `json:"written"`
 	Total       int64      `json:"total"`
 	Error       string     `json:"error"`
+	Customer    string     `json:"customer,omitempty"`
 	NextRun     string     `json:"nextRun"`
 	History     []histItem `json:"history"`
+	Plan        []planItem `json:"plan"`
 }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +450,7 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	resp.Written = action.BytesWritten
 	resp.Total = action.BytesTotal
 	resp.Error = action.Error
+	resp.Customer = action.Customer
 
 	if next := s.sched.NextRun(); !next.IsZero() {
 		resp.NextRun = next.Format("02.01.2006 15:04")
@@ -455,10 +465,16 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 			result = "ошибка"
 		}
 		resp.History = append(resp.History, histItem{
-			Time:   a.FinishedAt.Format("02.01 15:04:05"),
-			Desc:   a.Description,
-			Result: result,
+			Time:     a.FinishedAt.Format("02.01 15:04:05"),
+			Desc:     a.Description,
+			Result:   result,
+			Customer: a.Customer,
 		})
+	}
+	plan := s.mon.GetPlan()
+	resp.Plan = make([]planItem, 0, len(plan))
+	for _, p := range plan {
+		resp.Plan = append(resp.Plan, planItem{Customer: p.Customer, App: p.App, Status: p.Status})
 	}
 	writeJSON(w, resp)
 }

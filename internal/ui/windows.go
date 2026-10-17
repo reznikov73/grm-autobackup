@@ -11,38 +11,39 @@ import (
 	"grm-autobackup/internal/monitor"
 )
 
-// Ограничение: одновременно разрешено только одно открытое окно walk.
+// Ограничение: одно окно каждого типа одновременно (разные окна — можно).
 var (
-	windowMu   sync.Mutex
-	windowOpen bool
+	windowMu  sync.Mutex
+	openPages = map[string]bool{}
 )
 
-func acquireWindow() bool {
+func acquireWindow(page string) bool {
 	windowMu.Lock()
 	defer windowMu.Unlock()
-	if windowOpen {
+	if openPages[page] {
 		return false
 	}
-	windowOpen = true
+	openPages[page] = true
 	return true
 }
 
-func releaseWindow() {
+func releaseWindow(page string) {
 	windowMu.Lock()
-	windowOpen = false
+	openPages[page] = false
+	delete(openPages, page)
 	windowMu.Unlock()
 }
 
 // openWindow создаёт окно walk в отдельной горутине.
 // Каждое окно walk должно создаваться на OS-потоке, привязанном к горутине
 // (см. требования walk), поэтому горутина жёстко привязывается к потоку.
-func openWindow(m *monitor.Monitor, build func() (run func() int, err error)) bool {
-	if !acquireWindow() {
-		m.Infof("Окно уже открыто — закройте текущее окно и повторите")
+func openWindow(page string, m *monitor.Monitor, build func() (run func() int, err error)) bool {
+	if !acquireWindow(page) {
+		m.Infof("Окно «%s» уже открыто — используйте существующее", page)
 		return false
 	}
 	go func() {
-		defer releaseWindow()
+		defer releaseWindow(page)
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 

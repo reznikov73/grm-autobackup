@@ -15,7 +15,7 @@ func OpenMonitorWindow(s *scheduler.Scheduler, m *monitor.Monitor, srv *webui.Se
 		m.Errorf("Монитор недоступен: сервер интерфейса не запущен")
 		return
 	}
-	openWindow(m, func() (func() int, error) {
+	openWindow("monitor", m, func() (func() int, error) {
 		var dlg *walk.MainWindow
 		var wv *walk.WebView
 

@@ -229,9 +229,8 @@ func (s *Scheduler) runBackupCycle() {
 	}
 	s.monitor.Infof("К обработке: %d приложений", len(candidates))
 
-	if len(candidates) > 0 {
-		s.dl.DownloadAll(s.ctx, client, candidates, s.cfg.Storage.Path)
-	}
+	// DownloadAll сам сбросит план цикла, если приложений нет
+	s.dl.DownloadAll(s.ctx, client, candidates, s.cfg.Storage.Path)
 	cln.Cleanup(s.cfg.Storage.Path)
 }
 

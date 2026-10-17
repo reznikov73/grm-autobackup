@@ -23,6 +23,10 @@
     <div class="muted" id="updated" style="margin-top:4px;">—</div>
   </div>
   <div class="card">
+    <h2>Очередь цикла <span id="planSummary" class="muted" style="font-weight:400;"></span></h2>
+    <div id="plan"><div class="muted">Пока пусто</div></div>
+  </div>
+  <div class="card">
     <h2>Последние операции</h2>
     <div id="hist"><div class="muted">Пока пусто</div></div>
   </div>
@@ -70,6 +74,43 @@ function fmtEta(s) {
   return s + ' с';
 }
 
+function renderPlan(d) {
+  var host = $('plan');
+  host.innerHTML = '';
+  var plan = d.plan || [];
+  if (!plan.length) {
+    host.innerHTML = '<div class="muted">Очередь пуста</div>';
+    $('planSummary').innerHTML = '';
+    return;
+  }
+  var counts = { done: 0, skip: 0, err: 0, wait: 0 };
+  for (var i = 0; i < plan.length; i++) {
+    var it = plan[i];
+    var label = 'ожидает', cls = 'pend';
+    if (it.status === 'downloading') { label = 'качается'; cls = 'dl'; }
+    else if (it.status === 'skipped') { label = 'уже есть'; cls = 'skip'; }
+    else if (it.status === 'done') { label = 'скачано'; cls = 'done'; }
+    else if (it.status === 'error') { label = 'ошибка'; cls = 'err'; }
+    if (it.status === 'done') { counts.done++; }
+    else if (it.status === 'skipped') { counts.skip++; }
+    else if (it.status === 'error') { counts.err++; }
+    else { counts.wait++; }
+    var row = document.createElement('div');
+    row.className = 'hrow';
+    var pill = document.createElement('span');
+    pill.className = 'pill ' + cls;
+    pill.appendChild(document.createTextNode(label));
+    row.appendChild(pill);
+    var t = document.createElement('span');
+    t.className = 'pdesc';
+    t.appendChild(document.createTextNode(it.customer + ' — ' + it.app));
+    row.appendChild(t);
+    host.appendChild(row);
+  }
+  $('planSummary').innerHTML = '· скачано: ' + counts.done + ', уже было: ' + counts.skip +
+    ', ошибок: ' + counts.err + ', осталось: ' + counts.wait + ' из ' + plan.length;
+}
+
 function ts() {
   var d = new Date();
   function p(n) { return n < 10 ? '0' + n : '' + n; }
@@ -80,7 +121,7 @@ function poll() {
   api('GET', '/api/state', null, function (err, d) {
     if (err || !d) { return; }
     var st = 'Ожидание';
-    if (d.type === 'downloading') { st = 'Скачивание: ' + d.description; }
+    if (d.type === 'downloading') { st = 'Скачивание: ' + (d.customer ? d.customer + ' — ' : '') + d.description; }
     else if (d.type === 'cleaning') { st = 'Очистка старых бэкапов…'; }
     else if (d.type === 'error') { st = 'Ошибка: ' + d.error; }
     $('tstatus').innerHTML = '';
@@ -99,8 +140,9 @@ function poll() {
     }
     $('detail').innerHTML = '';
     $('detail').appendChild(document.createTextNode(det));
-    $('next').innerHTML = d.nextRun ? ('Следующий запуск: ' + d.nextRun) : 'Следующий запуск: —';
+    $('next').innerHTML = (d.type === 'downloading' || d.type === 'cleaning') ? 'Следующий запуск: — (идёт цикл)' : (d.nextRun ? ('Следующий запуск: ' + d.nextRun) : 'Следующий запуск: —');
     $('updated').innerHTML = 'обновлено ' + ts();
+    renderPlan(d);
 
     var h = $('hist');
     h.innerHTML = '';
@@ -119,7 +161,7 @@ function poll() {
       row.appendChild(t);
       var dd = document.createElement('span');
       dd.className = 'd';
-      dd.appendChild(document.createTextNode(it.desc));
+      dd.appendChild(document.createTextNode((it.customer ? it.customer + ' — ' : '') + it.desc));
       row.appendChild(dd);
       var r = document.createElement('span');
       r.className = 'r' + (it.result === 'ошибка' ? ' err' : '');

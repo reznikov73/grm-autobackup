@@ -32,20 +32,36 @@ func New(m *monitor.Monitor) *Downloader {
 func (d *Downloader) DownloadAll(ctx context.Context, client *api.Client, apps []api.Application, basePath string) {
 	if len(apps) == 0 {
 		d.monitor.Infof("Нечего скачивать: список приложений пуст")
+		d.monitor.SetPlan(nil)
 		return
 	}
 
-	custFolders := d.customerFolders(ctx, client, apps)
+	folders, names := d.customerFolders(ctx, client, apps)
 	appFoldersMap := appFolders(apps)
 
+	// План цикла (очередь) для монитора
+	plan := make([]monitor.PlanItem, 0, len(apps))
 	for _, app := range apps {
-		appDir := filepath.Join(basePath, custFolders[app.CustomerID], appFoldersMap[app.ID])
-		d.downloadLatest(ctx, client, app, appDir)
+		plan = append(plan, monitor.PlanItem{
+			ID:       app.ID,
+			Customer: names[app.CustomerID],
+			App:      app.Name,
+			Status:   "pending",
+		})
+	}
+	d.monitor.SetPlan(plan)
+
+	for _, app := range apps {
+		appDir := filepath.Join(basePath, folders[app.CustomerID], appFoldersMap[app.ID])
+		d.monitor.UpdatePlan(app.ID, "downloading")
+		status := d.downloadLatest(ctx, client, app, appDir, names[app.CustomerID])
+		d.monitor.UpdatePlan(app.ID, status)
 	}
 }
 
-// customerFolders определяет имена папок клиентов (с санитайзом и учетом коллизий)
-func (d *Downloader) customerFolders(ctx context.Context, client *api.Client, apps []api.Application) map[string]string {
+// customerFolders определяет имена папок клиентов (с санитайзом и учетом коллизий).
+// Возвращает папки для файловой системы и отображаемые имена клиентов.
+func (d *Downloader) customerFolders(ctx context.Context, client *api.Client, apps []api.Application) (map[string]string, map[string]string) {
 	names := make(map[string]string)
 	var ids []string
 	for _, app := range apps {
@@ -79,7 +95,7 @@ func (d *Downloader) customerFolders(ctx context.Context, client *api.Client, ap
 	}
 
 	sort.Strings(ids)
-	return uniqueFolders(ids, names)
+	return uniqueFolders(ids, names), names
 }
 
 // appFolders определяет имена папок приложений (коллизии — внутри одного клиента)
@@ -101,11 +117,13 @@ func appFolders(apps []api.Application) map[string]string {
 	return result
 }
 
-func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app api.Application, appDir string) {
+// downloadLatest скачивает последний бэкап приложения.
+// Возвращает статус для плана: "done", "skipped" или "error".
+func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app api.Application, appDir, customerName string) string {
 	backups, err := client.GetBackups(ctx, app.ID)
 	if err != nil {
 		d.monitor.Errorf("Ошибка получения бэкапов для %s: %v", app.Name, err)
-		return
+		return "error"
 	}
 
 	var ready []api.Backup
@@ -116,7 +134,7 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 	}
 	if len(ready) == 0 {
 		d.monitor.Infof("Нет готовых бэкапов: %s", app.Name)
-		return
+		return "skipped"
 	}
 
 	sort.Slice(ready, func(i, j int) bool { return ready[i].Date > ready[j].Date })
@@ -125,14 +143,14 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 	baseName := backupBaseName(latest)
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		d.monitor.Errorf("Не удалось создать папку %s: %v", appDir, err)
-		return
+		return "error"
 	}
 	basePath := filepath.Join(appDir, baseName)
 
 	// Бэкап уже скачан (в любом формате: .zip/.bz2/...)?
 	if existing := findExistingBackup(basePath); existing != "" {
 		d.monitor.Infof("Бэкап уже существует: %s", existing)
-		return
+		return "skipped"
 	}
 
 	// Проверка свободного места
@@ -141,7 +159,7 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 		if free < uint64(need) {
 			d.monitor.Warnf("Недостаточно места для %s.*: свободно %s, нужно ~%s — пропуск",
 				baseName, humanBytes(int64(free)), humanBytes(need))
-			return
+			return "skipped"
 		}
 	} else {
 		d.monitor.Warnf("Не удалось определить свободное место для %s: %v", appDir, err)
@@ -151,6 +169,7 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 		ID:          app.ID,
 		Type:        monitor.StatusDownloading,
 		Description: app.Name,
+		Customer:    customerName,
 		StartedAt:   time.Now(),
 	}
 	d.monitor.SetCurrent(action)
@@ -203,17 +222,19 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 			ID:          app.ID,
 			Type:        monitor.StatusError,
 			Description: "Ошибка: " + app.Name,
+			Customer:    customerName,
 			Error:       err.Error(),
 			StartedAt:   action.StartedAt,
 			FinishedAt:  time.Now(),
 		})
-		return
+		return "error"
 	}
 
 	d.monitor.AddToHistory(&monitor.Action{
 		ID:          app.ID,
 		Type:        monitor.StatusIdle,
 		Description: "Скачано: " + app.Name,
+		Customer:    customerName,
 		Progress:    100,
 		StartedAt:   action.StartedAt,
 		FinishedAt:  time.Now(),
@@ -225,4 +246,5 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 	} else {
 		d.monitor.Infof("Бэкап сохранен: %s", finalPath)
 	}
+	return "done"
 }

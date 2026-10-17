@@ -24,6 +24,7 @@ type Action struct {
 	ID           string       `json:"id"`
 	Type         ActionStatus `json:"type"`
 	Description  string       `json:"description"`
+	Customer     string       `json:"customer,omitempty"`
 	Progress     float64      `json:"progress"`
 	SpeedBps     float64      `json:"speed_bps,omitempty"`
 	BytesWritten int64        `json:"bytes_written,omitempty"`
@@ -31,6 +32,14 @@ type Action struct {
 	StartedAt    time.Time    `json:"started_at"`
 	FinishedAt   time.Time    `json:"finished_at"`
 	Error        string       `json:"error,omitempty"`
+}
+
+// PlanItem — пункт плана цикла (очередь скачивания)
+type PlanItem struct {
+	ID       string `json:"id"`
+	Customer string `json:"customer"`
+	App      string `json:"app"`
+	Status   string `json:"status"` // pending | downloading | skipped | done | error
 }
 
 // Уровни логирования
@@ -47,6 +56,7 @@ type Monitor struct {
 	current *Action
 	history []*Action
 	logs    []string
+	plan    []PlanItem
 	maxLogs int
 
 	logFile    *os.File
@@ -255,6 +265,34 @@ func (m *Monitor) GetLogs(n int) []string {
 	}
 	out := make([]string, n)
 	copy(out, m.logs[len(m.logs)-n:])
+	return out
+}
+
+// SetPlan задаёт план текущего цикла
+func (m *Monitor) SetPlan(items []PlanItem) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.plan = append([]PlanItem{}, items...)
+}
+
+// UpdatePlan меняет статус пункта плана
+func (m *Monitor) UpdatePlan(id, status string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.plan {
+		if m.plan[i].ID == id {
+			m.plan[i].Status = status
+			return
+		}
+	}
+}
+
+// GetPlan возвращает копию плана цикла
+func (m *Monitor) GetPlan() []PlanItem {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]PlanItem, len(m.plan))
+	copy(out, m.plan)
 	return out
 }
 

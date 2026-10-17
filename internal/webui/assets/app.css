@@ -53,3 +53,9 @@ pre.log { position: absolute; top: 66px; left: 16px; right: 16px; bottom: 14px; 
 .stepper .sbtn { width: 30px; height: 30px; padding: 0; margin-left: 6px; font-size: 16px; line-height: 26px; vertical-align: top; }
 .timebox select.txt { width: 64px; display: inline-block; }
 .timebox .sep { display: inline-block; padding: 0 6px; color: #5b6777; line-height: 30px; vertical-align: top; }
+.pill.pend { background: #eef1f6; color: #5b6777; }
+.pill.dl { background: #e8f0fd; color: #2e6fe8; }
+.pill.skip { background: #f2f4f8; color: #8b95a6; }
+.pill.done { background: #e6f6ec; color: #1e7f3c; }
+.pill.err { background: #fdecea; color: #c0392b; }
+.pdesc { margin-left: 8px; vertical-align: middle; }

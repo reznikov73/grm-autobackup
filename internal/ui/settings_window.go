@@ -18,7 +18,7 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 		m.Errorf("Настройки недоступны: сервер интерфейса не запущен")
 		return
 	}
-	openWindow(m, func() (func() int, error) {
+	openWindow("settings", m, func() (func() int, error) {
 		var dlg *walk.MainWindow
 		var wv *walk.WebView
 

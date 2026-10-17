@@ -14,7 +14,7 @@ func OpenLogWindow(m *monitor.Monitor, srv *webui.Server) {
 		m.Errorf("Лог недоступен: сервер интерфейса не запущен")
 		return
 	}
-	openWindow(m, func() (func() int, error) {
+	openWindow("log", m, func() (func() int, error) {
 		var dlg *walk.MainWindow
 		var wv *walk.WebView
 
