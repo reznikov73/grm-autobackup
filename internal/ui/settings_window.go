@@ -129,22 +129,40 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 			}
 			sort.Slice(custIDs, func(i, j int) bool { return custNames[custIDs[i]] < custNames[custIDs[j]] })
 
+			hdrFont := uiFontBold(10)
+			countFont, _ := walk.NewFont("Segoe UI", 8, 0)
+			cbFont := uiFont()
+
 			shownApps := 0
 			for _, cid := range custIDs {
-				gb, err := walk.NewGroupBox(pickHost)
-				if err != nil {
-					continue
+				head, err := walk.NewComposite(pickHost)
+				if err == nil {
+					_ = head.SetLayout(walk.NewHBoxLayout())
+					nameLbl, errL := walk.NewLabel(head)
+					if errL == nil {
+						_ = nameLbl.SetText(custNames[cid])
+						if hdrFont != nil {
+							nameLbl.SetFont(hdrFont)
+						}
+					}
+					cntLbl, errC := walk.NewLabel(head)
+					if errC == nil {
+						_ = cntLbl.SetText(fmt.Sprintf("· приложений: %d", len(byCust[cid])))
+						if countFont != nil {
+							cntLbl.SetFont(countFont)
+						}
+					}
 				}
-				_ = gb.SetTitle(fmt.Sprintf("%s (%d)", custNames[cid], len(byCust[cid])))
-				vb := walk.NewVBoxLayout()
-				vb.SetSpacing(2)
-				_ = gb.SetLayout(vb)
+
 				for _, app := range byCust[cid] {
-					cb, err := walk.NewCheckBox(gb)
+					cb, err := walk.NewCheckBox(pickHost)
 					if err != nil {
 						continue
 					}
-					_ = cb.SetText(app.Name + "  [" + statusRu(app.Status) + "]")
+					_ = cb.SetText("   " + app.Name + "   [" + statusRu(app.Status) + "]")
+					if cbFont != nil {
+						cb.SetFont(cbFont)
+					}
 					cb.SetChecked(checked[app.ID])
 					id := app.ID
 					cb.CheckedChanged().Attach(func() {
@@ -315,16 +333,16 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 		err := MainWindow{
 			AssignTo: &dlg,
 			Title:    "Настройки — 1С:ГРМ AutoBackup",
-			Size:     Size{Width: 760, Height: 640},
-			MinSize:  Size{Width: 640, Height: 520},
-			Layout:   VBox{},
+			Size:     Size{Width: 780, Height: 660},
+			MinSize:  Size{Width: 660, Height: 540},
+			Layout:   VBox{Margins: Margins{Left: 10, Top: 10, Right: 10, Bottom: 10}, Spacing: 8},
 			Children: []Widget{
 				TabWidget{
 					AssignTo: &tabs,
 					Pages: []TabPage{
 						{
 							Title:  "Подключение",
-							Layout: VBox{},
+							Layout: VBox{Margins: Margins{Left: 10, Top: 10, Right: 10, Bottom: 10}, Spacing: 8},
 							Children: []Widget{
 								GroupBox{
 									Title:  "Параметры API",
@@ -342,7 +360,7 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 						},
 						{
 							Title:  "Расписание",
-							Layout: VBox{},
+							Layout: VBox{Margins: Margins{Left: 10, Top: 10, Right: 10, Bottom: 10}, Spacing: 8},
 							Children: []Widget{
 								GroupBox{
 									Title:  "Когда скачивать бэкапы",
@@ -362,13 +380,12 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 						},
 						{
 							Title:  "Выбор приложений",
-							Layout: VBox{},
+							Layout: VBox{Margins: Margins{Left: 10, Top: 10, Right: 10, Bottom: 10}, Spacing: 8},
 							Children: []Widget{
 								Composite{
-									Layout: HBox{},
+									Layout: HBox{Spacing: 8},
 									Children: []Widget{
-										Label{Text: "Поиск:"},
-										LineEdit{AssignTo: &pickSearch},
+										LineEdit{AssignTo: &pickSearch, CueBanner: "Поиск по клиенту или конфигурации…"},
 										PushButton{Text: "Обновить из API", OnClicked: func() { loadPicker() }},
 										PushButton{Text: "Все", OnClicked: func() { setAll(true) }},
 										PushButton{Text: "Снять все", OnClicked: func() { setAll(false) }},
@@ -376,14 +393,14 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 								},
 								ScrollView{
 									AssignTo: &pickHost,
-									Layout:   VBox{},
+									Layout:   VBox{Margins: Margins{Left: 10, Top: 8, Right: 10, Bottom: 8}, Spacing: 3, Alignment: AlignHNearVNear},
 								},
 								Label{AssignTo: &pickStatus, Text: "Список ещё не загружен — нажмите «Обновить из API»."},
 							},
 						},
 						{
 							Title:  "Прочее",
-							Layout: VBox{},
+							Layout: VBox{Margins: Margins{Left: 10, Top: 10, Right: 10, Bottom: 10}, Spacing: 8},
 							Children: []Widget{
 								GroupBox{
 									Title:  "Хранилище",
@@ -410,7 +427,7 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 					},
 				},
 				Composite{
-					Layout: HBox{},
+					Layout: HBox{Spacing: 8},
 					Children: []Widget{
 						HSpacer{},
 						PushButton{Text: "Сохранить", OnClicked: save},
@@ -423,7 +440,16 @@ func OpenSettingsWindow(cfg *config.Config, cfgPath string, s *scheduler.Schedul
 			return nil, err
 		}
 
-		centerForm(dlg, 760, 640)
+		centerForm(dlg, 780, 660)
+		uiF := uiFont()
+		applyFont(dlg, uiF)
+		if tabs != nil && uiF != nil {
+			for i := 0; i < tabs.Pages().Len(); i++ {
+				if c, ok := interface{}(tabs.Pages().At(i)).(walk.Container); ok {
+					applyFontTo(c, uiF)
+				}
+			}
+		}
 
 		if pickSearch != nil {
 			pickSearch.TextChanged().Attach(func() { rebuildPicker() })

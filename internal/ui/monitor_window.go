@@ -119,7 +119,7 @@ func OpenMonitorWindow(s *scheduler.Scheduler, m *monitor.Monitor) {
 			Title:    "Монитор действий — 1С:ГРМ AutoBackup",
 			Size:     Size{Width: 780, Height: 500},
 			MinSize:  Size{Width: 620, Height: 400},
-			Layout:   VBox{},
+			Layout:   VBox{Margins: Margins{Left: 10, Top: 10, Right: 10, Bottom: 10}, Spacing: 8},
 			Children: []Widget{
 				Label{AssignTo: &statusLabel, Text: "Ожидание"},
 				ProgressBar{AssignTo: &progress, MinValue: 0, MaxValue: 100},
@@ -137,7 +137,7 @@ func OpenMonitorWindow(s *scheduler.Scheduler, m *monitor.Monitor) {
 					},
 				},
 				Composite{
-					Layout: HBox{},
+					Layout: HBox{Spacing: 8},
 					Children: []Widget{
 						PushButton{Text: "Обновить сейчас", OnClicked: func() { s.RunNow() }},
 						PushButton{Text: "Обновить", OnClicked: refresh},
@@ -152,6 +152,7 @@ func OpenMonitorWindow(s *scheduler.Scheduler, m *monitor.Monitor) {
 		}
 
 		centerForm(dlg, 780, 500)
+		applyFont(dlg, uiFont())
 		refresh()
 
 		stopCh := make(chan struct{})

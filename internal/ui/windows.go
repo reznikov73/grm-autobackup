@@ -80,6 +80,50 @@ func centerForm(form *walk.MainWindow, width, height int) {
 	_ = form.SetBounds(walk.Rectangle{X: x, Y: y, Width: width, Height: height})
 }
 
+// uiFont возвращает базовый шрифт интерфейса (Segoe UI 9pt)
+func uiFont() *walk.Font {
+	f, err := walk.NewFont("Segoe UI", 9, 0)
+	if err != nil {
+		return nil
+	}
+	return f
+}
+
+// uiFontBold возвращает полужирный шрифт интерфейса
+func uiFontBold(pointSize int) *walk.Font {
+	f, err := walk.NewFont("Segoe UI", pointSize, walk.FontBold)
+	if err != nil {
+		return nil
+	}
+	return f
+}
+
+// applyFontTo рекурсивно применяет шрифт ко всем дочерним виджетам контейнера
+func applyFontTo(c walk.Container, font *walk.Font) {
+	if c == nil || font == nil {
+		return
+	}
+	children := c.Children()
+	for i := 0; i < children.Len(); i++ {
+		w := children.At(i)
+		if wf, ok := w.(interface{ SetFont(*walk.Font) }); ok {
+			wf.SetFont(font)
+		}
+		if cc, ok := w.(walk.Container); ok {
+			applyFontTo(cc, font)
+		}
+	}
+}
+
+// applyFont применяет шрифт к окну и всем вложенным виджетам
+func applyFont(form *walk.MainWindow, font *walk.Font) {
+	if form == nil || font == nil {
+		return
+	}
+	form.SetFont(font)
+	applyFontTo(form, font)
+}
+
 // formatBytes форматирует размер в человекочитаемый вид
 func formatBytes(n int64) string {
 	f := float64(n)

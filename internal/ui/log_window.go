@@ -59,15 +59,15 @@ func OpenLogWindow(m *monitor.Monitor) {
 			Title:    "Лог — 1С:ГРМ AutoBackup",
 			Size:     Size{Width: 900, Height: 560},
 			MinSize:  Size{Width: 700, Height: 420},
-			Layout:   VBox{},
+			Layout:   VBox{Margins: Margins{Left: 10, Top: 10, Right: 10, Bottom: 10}, Spacing: 8},
 			Children: []Widget{
 				Composite{
-					Layout: HBox{},
+					Layout: HBox{Spacing: 8},
 					Children: []Widget{
 						Label{Text: "Уровень:"},
 						ComboBox{AssignTo: &levelCombo, Model: levels, CurrentIndex: 0},
 						Label{Text: "Поиск:"},
-						LineEdit{AssignTo: &searchEdit},
+						LineEdit{AssignTo: &searchEdit, CueBanner: "фильтр по тексту…"},
 						CheckBox{AssignTo: &autoScroll, Text: "Автоскролл", Checked: true},
 					},
 				},
@@ -76,10 +76,9 @@ func OpenLogWindow(m *monitor.Monitor) {
 					ReadOnly: true,
 					VScroll:  true,
 					HScroll:  true,
-					Font:     Font{Family: "Consolas", PointSize: 9},
 				},
 				Composite{
-					Layout: HBox{},
+					Layout: HBox{Spacing: 8},
 					Children: []Widget{
 						PushButton{Text: "Обновить", OnClicked: refresh},
 						PushButton{Text: "Очистить", OnClicked: func() {
@@ -97,6 +96,12 @@ func OpenLogWindow(m *monitor.Monitor) {
 		}
 
 		centerForm(dlg, 900, 560)
+		applyFont(dlg, uiFont())
+		// В текстовом поле — моноширинный шрифт (после общего применения шрифтов)
+		if f, err := walk.NewFont("Consolas", 9, 0); err == nil {
+			te.SetFont(f)
+		}
+
 		levelCombo.CurrentIndexChanged().Attach(func() { refresh() })
 		searchEdit.TextChanged().Attach(func() { refresh() })
 		refresh()
