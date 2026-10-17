@@ -59,3 +59,8 @@ pre.log { position: absolute; top: 66px; left: 16px; right: 16px; bottom: 14px; 
 .pill.done { background: #e6f6ec; color: #1e7f3c; }
 .pill.err { background: #fdecea; color: #c0392b; }
 .pdesc { margin-left: 8px; vertical-align: middle; }
+.prow { display: block; padding: 6px 4px; border-bottom: 1px solid #f0f3f8; }
+.prow .pill { vertical-align: top; }
+.ptext { display: inline-block; margin-left: 8px; vertical-align: top; }
+.ptext .p1 { display: block; color: #5b6777; font-size: 12px; }
+.ptext .p2 { display: block; color: #2c3646; }

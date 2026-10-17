@@ -17,6 +17,7 @@
 <div style="position:absolute; top:54px; left:0; right:0; bottom:0; overflow-y:auto;">
   <div class="card">
     <h2 id="tstatus">Ожидание</h2>
+    <div id="tcustomer" class="muted" style="margin-top:2px;"></div>
     <div class="pbar"><div class="fill" id="pfill"></div></div>
     <div class="muted" id="detail">—</div>
     <div class="muted" id="next" style="margin-top:6px;">Следующий запуск: —</div>
@@ -78,8 +79,11 @@ function renderPlan(d) {
   var host = $('plan');
   host.innerHTML = '';
   var plan = d.plan || [];
+  var selected = d.selectedCount || 0;
   if (!plan.length) {
-    host.innerHTML = '<div class="muted">Очередь пуста</div>';
+    host.innerHTML = selected
+      ? '<div class="muted">Цикл ещё не начался — в настройках выбрано: ' + selected + ' приложений</div>'
+      : '<div class="muted">Очередь пуста</div>';
     $('planSummary').innerHTML = '';
     return;
   }
@@ -96,19 +100,27 @@ function renderPlan(d) {
     else if (it.status === 'error') { counts.err++; }
     else { counts.wait++; }
     var row = document.createElement('div');
-    row.className = 'hrow';
+    row.className = 'prow';
     var pill = document.createElement('span');
     pill.className = 'pill ' + cls;
     pill.appendChild(document.createTextNode(label));
     row.appendChild(pill);
-    var t = document.createElement('span');
-    t.className = 'pdesc';
-    t.appendChild(document.createTextNode(it.customer + ' — ' + it.app));
-    row.appendChild(t);
+    var txt = document.createElement('span');
+    txt.className = 'ptext';
+    var l1 = document.createElement('span');
+    l1.className = 'p1';
+    l1.appendChild(document.createTextNode(it.customer));
+    txt.appendChild(l1);
+    var l2 = document.createElement('span');
+    l2.className = 'p2';
+    l2.appendChild(document.createTextNode(it.app));
+    txt.appendChild(l2);
+    row.appendChild(txt);
     host.appendChild(row);
   }
-  $('planSummary').innerHTML = '· скачано: ' + counts.done + ', уже было: ' + counts.skip +
-    ', ошибок: ' + counts.err + ', осталось: ' + counts.wait + ' из ' + plan.length;
+  $('planSummary').innerHTML = '· в цикле: ' + plan.length + ', в настройках выбрано: ' + selected +
+    ' · скачано: ' + counts.done + ', уже было: ' + counts.skip + ', ошибок: ' + counts.err +
+    ', осталось: ' + counts.wait;
 }
 
 function ts() {
@@ -120,12 +132,20 @@ function ts() {
 function poll() {
   api('GET', '/api/state', null, function (err, d) {
     if (err || !d) { return; }
-    var st = 'Ожидание';
-    if (d.type === 'downloading') { st = 'Скачивание: ' + (d.customer ? d.customer + ' — ' : '') + d.description; }
-    else if (d.type === 'cleaning') { st = 'Очистка старых бэкапов…'; }
-    else if (d.type === 'error') { st = 'Ошибка: ' + d.error; }
+    var stTitle = 'Ожидание';
+    var stSub = '';
+    if (d.type === 'downloading') {
+      stTitle = d.customer || 'Скачивание';
+      stSub = 'Скачивание: ' + d.description;
+    } else if (d.type === 'cleaning') {
+      stTitle = 'Очистка старых бэкапов…';
+    } else if (d.type === 'error') {
+      stTitle = d.customer || 'Ошибка';
+      stSub = 'Ошибка: ' + d.error;
+    }
     $('tstatus').innerHTML = '';
-    $('tstatus').appendChild(document.createTextNode(st));
+    $('tstatus').appendChild(document.createTextNode(stTitle));
+    $('tcustomer').textContent = stSub;
 
     var pct = Math.max(0, Math.min(100, Math.round(d.progress || 0)));
     $('pfill').style.width = pct + '%';
@@ -160,8 +180,15 @@ function poll() {
       t.appendChild(document.createTextNode(it.time));
       row.appendChild(t);
       var dd = document.createElement('span');
-      dd.className = 'd';
-      dd.appendChild(document.createTextNode((it.customer ? it.customer + ' — ' : '') + it.desc));
+      dd.className = 'ptext';
+      var s1 = document.createElement('span');
+      s1.className = 'p1';
+      s1.appendChild(document.createTextNode(it.customer || ''));
+      dd.appendChild(s1);
+      var s2 = document.createElement('span');
+      s2.className = 'p2';
+      s2.appendChild(document.createTextNode(it.desc));
+      dd.appendChild(s2);
       row.appendChild(dd);
       var r = document.createElement('span');
       r.className = 'r' + (it.result === 'ошибка' ? ' err' : '');

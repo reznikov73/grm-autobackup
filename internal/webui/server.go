@@ -374,6 +374,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 
 	ids := append([]string{}, req.Checked...)
 	sort.Strings(ids)
+	oldSelection := append([]string{}, s.cfg.Inclusions.ApplicationIDs...)
 
 	s.cfg.Inclusions.ApplicationIDs = ids
 	s.cfg.Exclusions.ApplicationIDs = []string{}
@@ -398,6 +399,11 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 
 	s.mon.SetLevel(s.cfg.Logging.Level)
 	s.sched.Reload()
+
+	if !sameStringSet(oldSelection, ids) {
+		s.mon.Infof("Выбор приложений изменён (%d → %d) — запускаю новый цикл", len(oldSelection), len(ids))
+		s.sched.RunNow()
+	}
 
 	autostartWarn := ""
 	if exe, err := exePath(); err == nil {
@@ -427,17 +433,18 @@ type planItem struct {
 }
 
 type stateResp struct {
-	Type        string     `json:"type"`
-	Description string     `json:"description"`
-	Progress    float64    `json:"progress"`
-	Speed       float64    `json:"speed"`
-	Written     int64      `json:"written"`
-	Total       int64      `json:"total"`
-	Error       string     `json:"error"`
-	Customer    string     `json:"customer,omitempty"`
-	NextRun     string     `json:"nextRun"`
-	History     []histItem `json:"history"`
-	Plan        []planItem `json:"plan"`
+	Type          string     `json:"type"`
+	Description   string     `json:"description"`
+	Progress      float64    `json:"progress"`
+	Speed         float64    `json:"speed"`
+	Written       int64      `json:"written"`
+	Total         int64      `json:"total"`
+	Error         string     `json:"error"`
+	Customer      string     `json:"customer,omitempty"`
+	NextRun       string     `json:"nextRun"`
+	History       []histItem `json:"history"`
+	Plan          []planItem `json:"plan"`
+	SelectedCount int        `json:"selectedCount"`
 }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
@@ -451,6 +458,7 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	resp.Total = action.BytesTotal
 	resp.Error = action.Error
 	resp.Customer = action.Customer
+	resp.SelectedCount = len(s.cfg.Inclusions.ApplicationIDs)
 
 	if next := s.sched.NextRun(); !next.IsZero() {
 		resp.NextRun = next.Format("02.01.2006 15:04")
@@ -572,6 +580,23 @@ func (s *Server) handlePickFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]interface{}{"ok": true, "path": path})
+}
+
+// sameStringSet сообщает, совпадают ли наборы строк
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	as := append([]string{}, a...)
+	bs := append([]string{}, b...)
+	sort.Strings(as)
+	sort.Strings(bs)
+	for i := range as {
+		if as[i] != bs[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // exePath возвращает путь к исполняемому файлу.
