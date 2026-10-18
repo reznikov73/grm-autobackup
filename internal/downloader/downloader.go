@@ -52,10 +52,18 @@ func (d *Downloader) DownloadAll(ctx context.Context, client *api.Client, apps [
 	d.monitor.SetPlan(plan)
 
 	for _, app := range apps {
+		if ctx.Err() != nil {
+			// Сервис остановлен: оставшиеся приложения остаются в очереди.
+			d.monitor.UpdatePlan(app.ID, "paused")
+			continue
+		}
 		appDir := filepath.Join(basePath, folders[app.CustomerID], appFoldersMap[app.ID])
 		d.monitor.UpdatePlan(app.ID, "downloading")
 		status := d.downloadLatest(ctx, client, app, appDir, names[app.CustomerID])
 		d.monitor.UpdatePlan(app.ID, status)
+	}
+	if ctx.Err() != nil {
+		d.monitor.Infof("Скачивание остановлено: часть приложений осталась в очереди")
 	}
 }
 
@@ -217,6 +225,12 @@ func (d *Downloader) downloadLatest(ctx context.Context, client *api.Client, app
 		d.monitor.UpdateProgress(app.ID, percent, speed, written, total)
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			// Остановка сервиса: .part сохранён и будет докачан позже.
+			d.monitor.Infof("Загрузка остановлена: %s (сохранено %s, докачаем при запуске сервиса)", baseName, humanBytes(lastWritten))
+			d.monitor.SetCurrent(&monitor.Action{Type: monitor.StatusIdle})
+			return "paused"
+		}
 		d.monitor.Errorf("Ошибка скачивания %s: %v", baseName, err)
 		d.monitor.SetCurrent(&monitor.Action{
 			ID:          app.ID,

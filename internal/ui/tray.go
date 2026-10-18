@@ -104,7 +104,7 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 					title = "Статус: ошибка"
 				}
 
-				if s.Paused() && action.Type != monitor.StatusDownloading {
+				if s.Paused() {
 					iconKey = "paused"
 					iconBytes = icons.Paused()
 					title = "Статус: сервис остановлен"

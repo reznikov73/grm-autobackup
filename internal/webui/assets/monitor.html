@@ -96,6 +96,7 @@ function renderPlan(d) {
     else if (it.status === 'skipped') { label = 'уже есть'; cls = 'skip'; }
     else if (it.status === 'done') { label = 'скачано'; cls = 'done'; }
     else if (it.status === 'error') { label = 'ошибка'; cls = 'err'; }
+    else if (it.status === 'paused') { label = 'остановлено'; cls = 'stop'; }
     if (it.status === 'done') { counts.done++; }
     else if (it.status === 'skipped') { counts.skip++; }
     else if (it.status === 'error') { counts.err++; }

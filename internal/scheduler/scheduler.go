@@ -32,6 +32,9 @@ type Scheduler struct {
 	startMu    sync.Mutex
 	started    bool
 	loopCancel context.CancelFunc
+
+	cycleMu     sync.Mutex
+	cycleCancel context.CancelFunc
 }
 
 // New создает новый планировщик
@@ -91,7 +94,8 @@ func (s *Scheduler) Stop() {
 // Paused сообщает, остановлен ли сервис пользователем
 func (s *Scheduler) Paused() bool { return s.paused.Load() }
 
-// Pause останавливает работу по расписанию; текущий цикл, если идёт, дорабатывает до конца
+// Pause останавливает работу по расписанию и прерывает текущую загрузку;
+// незавершённый файл .part сохраняется и докачивается при следующем запуске.
 func (s *Scheduler) Pause() {
 	if s.paused.Swap(true) {
 		return
@@ -103,6 +107,12 @@ func (s *Scheduler) Pause() {
 	}
 	s.startMu.Unlock()
 	s.nextRunUnix.Store(0)
+	// Прерываем текущий цикл: активная загрузка останавливается сразу.
+	s.cycleMu.Lock()
+	if s.cycleCancel != nil {
+		s.cycleCancel()
+	}
+	s.cycleMu.Unlock()
 	s.monitor.Infof("Сервис остановлен пользователем")
 }
 
@@ -214,6 +224,18 @@ func (s *Scheduler) runBackupCycle() {
 	}
 	defer s.cycleActive.Store(false)
 
+	// Отдельный контекст цикла: остановка сервиса прерывает загрузку.
+	ctx, cancel := context.WithCancel(s.ctx)
+	s.cycleMu.Lock()
+	s.cycleCancel = cancel
+	s.cycleMu.Unlock()
+	defer func() {
+		cancel()
+		s.cycleMu.Lock()
+		s.cycleCancel = nil
+		s.cycleMu.Unlock()
+	}()
+
 	s.monitor.Infof("Начало цикла бэкапов")
 	defer s.monitor.Infof("Цикл бэкапов завершен")
 
@@ -222,8 +244,12 @@ func (s *Scheduler) runBackupCycle() {
 	cln := s.cln
 	s.startMu.Unlock()
 
-	apps, err := client.GetApplications(s.ctx)
+	apps, err := client.GetApplications(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			s.monitor.Infof("Цикл прерван: сервис остановлен")
+			return
+		}
 		s.monitor.Errorf("Ошибка получения приложений: %v", err)
 		return
 	}
@@ -261,7 +287,11 @@ func (s *Scheduler) runBackupCycle() {
 	s.monitor.Infof("К обработке: %d приложений", len(candidates))
 
 	// DownloadAll сам сбросит план цикла, если приложений нет
-	s.dl.DownloadAll(s.ctx, client, candidates, s.cfg.Storage.Path)
+	s.dl.DownloadAll(ctx, client, candidates, s.cfg.Storage.Path)
+	if ctx.Err() != nil {
+		s.monitor.Infof("Цикл прерван: сервис остановлен, очистка отложена")
+		return
+	}
 	cln.Cleanup(s.cfg.Storage.Path)
 }
 
