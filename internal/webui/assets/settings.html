@@ -56,6 +56,17 @@
       <label class="row" style="margin-top:10px;"><input type="checkbox" id="stopped"> <span class="nm">Обрабатывать и остановленные приложения</span></label>
     </div>
     <div class="card">
+      <h2>Сервис</h2>
+      <div class="duo">
+        <div class="c left" style="width:68%;">
+          <div class="muted" id="svcState">Состояние: —</div>
+        </div>
+        <div class="c" style="width:32%;">
+          <button class="btn" id="btnService" onclick="toggleService()">Остановить сервис</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
       <h2>Хранилище и журнал</h2>
       <label class="fl">Папка сохранения бэкапов</label>
       <div class="pathrow">
@@ -114,6 +125,8 @@ var KEY = readKey();
 
 var checked = {};
 var groups = [];
+var appsLoaded = false;
+var servicePaused = false;
 
 function api(method, path, body, cb) {
   var x = new XMLHttpRequest();
@@ -236,6 +249,7 @@ function loadApps(resetState) {
       return;
     }
     groups = d.customers || [];
+    appsLoaded = true;
     if (resetState) {
       checked = {};
       var i;
@@ -338,6 +352,11 @@ function doSave() {
   for (k in checked) {
     if (checked.hasOwnProperty(k) && checked[k]) { ids.push(k); }
   }
+  if (appsLoaded && ids.length === 0) {
+    $('status').innerHTML = 'Ошибка';
+    toast('Ошибка: отметьте хотя бы одно приложение', true);
+    return;
+  }
   var req = {
     url: val('url'),
     jwt: val('jwt'),
@@ -349,7 +368,8 @@ function doSave() {
     includeStopped: $('stopped').checked,
     autostart: $('autostart').checked,
     level: val('level'),
-    checked: ids
+    checked: ids,
+    selectionKnown: appsLoaded
   };
   $('status').innerHTML = 'Сохранение…';
   api('POST', '/api/save', req, function (err, d) {
@@ -358,6 +378,7 @@ function doSave() {
     $('status').innerHTML = 'Сохранено';
     toast('Сохранено');
     if (d.autostartWarning) { toast('Автозапуск: ' + d.autostartWarning, true); }
+    if (!appsLoaded) { loadApps(true); }
   });
 }
 
@@ -365,7 +386,29 @@ function doClose() {
   api('POST', '/api/close', { page: 'settings' }, function () {});
 }
 
+function loadService() {
+  api('GET', '/api/service', null, function (err, d) {
+    if (err || !d) { return; }
+    servicePaused = !!d.paused;
+    $('svcState').innerHTML = servicePaused
+      ? 'Состояние: остановлен (работа по расписанию приостановлена)'
+      : 'Состояние: работает';
+    $('btnService').innerHTML = servicePaused ? 'Запустить сервис' : 'Остановить сервис';
+  });
+}
+
+function toggleService() {
+  var action = servicePaused ? 'start' : 'stop';
+  $('svcState').innerHTML = 'Состояние: применяю…';
+  api('POST', '/api/service', { action: action }, function (err, d) {
+    if (err) { toast('Ошибка: ' + err, true); loadService(); return; }
+    loadService();
+    toast((d && d.paused) ? 'Сервис остановлен' : 'Сервис запущен');
+  });
+}
+
 fillTimeSelects();
+loadService();
 if (window.location.hash === '#apps') { showTab(1); } else { showTab(0); }
 loadSettings();
 loadApps(true);

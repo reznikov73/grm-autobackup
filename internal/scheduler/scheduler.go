@@ -27,6 +27,7 @@ type Scheduler struct {
 
 	cycleActive atomic.Bool
 	nextRunUnix atomic.Int64
+	paused      atomic.Bool
 
 	startMu    sync.Mutex
 	started    bool
@@ -85,6 +86,36 @@ func (s *Scheduler) Stop() {
 		s.startMu.Unlock()
 		s.monitor.Infof("Планировщик остановлен")
 	})
+}
+
+// Paused сообщает, остановлен ли сервис пользователем
+func (s *Scheduler) Paused() bool { return s.paused.Load() }
+
+// Pause останавливает работу по расписанию; текущий цикл, если идёт, дорабатывает до конца
+func (s *Scheduler) Pause() {
+	if s.paused.Swap(true) {
+		return
+	}
+	s.startMu.Lock()
+	if s.loopCancel != nil {
+		s.loopCancel()
+		s.loopCancel = nil
+	}
+	s.startMu.Unlock()
+	s.nextRunUnix.Store(0)
+	s.monitor.Infof("Сервис остановлен пользователем")
+}
+
+// Resume возобновляет работу сервиса и запускает цикл сразу
+func (s *Scheduler) Resume() {
+	if !s.paused.Swap(false) {
+		return
+	}
+	s.monitor.Infof("Сервис запущен пользователем")
+	s.startMu.Lock()
+	s.started = true
+	s.startLoopLocked(true)
+	s.startMu.Unlock()
 }
 
 // RunNow запускает задачу вручную

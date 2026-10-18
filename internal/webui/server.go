@@ -85,6 +85,7 @@ func Start(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *monito
 	mux.HandleFunc("/api/refresh", srv.auth(srv.handleRefresh))
 	mux.HandleFunc("/api/close", srv.auth(srv.handleClose))
 	mux.HandleFunc("/api/pickfolder", srv.auth(srv.handlePickFolder))
+	mux.HandleFunc("/api/service", srv.auth(srv.handleService))
 
 	nocache := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -237,6 +238,10 @@ type appsResp struct {
 }
 
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(s.cfg.API.JWTToken) == "" {
+		http.Error(w, "сначала сохраните JWT токен на вкладке «Настройки»", http.StatusConflict)
+		return
+	}
 	client := api.New(s.cfg.API.URL, s.cfg.API.JWTToken, s.cfg.API.TimeoutSec)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -335,6 +340,7 @@ type saveReq struct {
 	Autostart      bool     `json:"autostart"`
 	Level          string   `json:"level"`
 	Checked        []string `json:"checked"`
+	SelectionKnown bool     `json:"selectionKnown"`
 }
 
 func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
@@ -355,9 +361,16 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, "время в расписании должно быть в формате ЧЧ:ММ")
 		return
 	}
-	if len(req.Checked) == 0 {
-		writeErr(w, "отметьте хотя бы одно приложение")
-		return
+	ids := append([]string{}, req.Checked...)
+	if req.SelectionKnown {
+		if len(ids) == 0 {
+			writeErr(w, "отметьте хотя бы одно приложение")
+			return
+		}
+		sort.Strings(ids)
+	} else {
+		// Список приложений ещё не загружен (первый запуск) — сохраняем прежний выбор.
+		ids = append([]string{}, s.cfg.Inclusions.ApplicationIDs...)
 	}
 	limit := int(req.Limit)
 	if limit < 1 {
@@ -372,15 +385,18 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		mode = "interval"
 	}
 
-	ids := append([]string{}, req.Checked...)
-	sort.Strings(ids)
 	oldSelection := append([]string{}, s.cfg.Inclusions.ApplicationIDs...)
 
 	s.cfg.Inclusions.ApplicationIDs = ids
 	s.cfg.Exclusions.ApplicationIDs = []string{}
 	s.cfg.Exclusions.ApplicationNames = []string{}
 	s.cfg.API.URL = strings.TrimSpace(req.URL)
-	s.cfg.API.JWTToken = strings.TrimSpace(req.JWT)
+	jwt := strings.TrimSpace(req.JWT)
+	if jwt == "" {
+		// Пустое поле не должно стирать сохранённый токен.
+		jwt = s.cfg.API.JWTToken
+	}
+	s.cfg.API.JWTToken = jwt
 	s.cfg.Storage.Path = strings.TrimSpace(req.Path)
 	s.cfg.Storage.BackupLimit = limit
 	s.cfg.Schedule.Mode = mode
@@ -445,6 +461,8 @@ type stateResp struct {
 	History       []histItem `json:"history"`
 	Plan          []planItem `json:"plan"`
 	SelectedCount int        `json:"selectedCount"`
+	AllSelected   bool       `json:"allSelected"`
+	Paused        bool       `json:"paused"`
 }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
@@ -459,6 +477,8 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	resp.Error = action.Error
 	resp.Customer = action.Customer
 	resp.SelectedCount = len(s.cfg.Inclusions.ApplicationIDs)
+	resp.AllSelected = len(s.cfg.Inclusions.ApplicationIDs) == 0
+	resp.Paused = s.sched.Paused()
 
 	if next := s.sched.NextRun(); !next.IsZero() {
 		resp.NextRun = next.Format("02.01.2006 15:04")
@@ -485,6 +505,35 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		resp.Plan = append(resp.Plan, planItem{Customer: p.Customer, App: p.App, Status: p.Status})
 	}
 	writeJSON(w, resp)
+}
+
+// --- /api/service ---
+
+func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, map[string]interface{}{"paused": s.sched.Paused()})
+	case http.MethodPost:
+		var req struct {
+			Action string `json:"action"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+			writeErr(w, "некорректный запрос: "+err.Error())
+			return
+		}
+		switch req.Action {
+		case "stop":
+			s.sched.Pause()
+		case "start":
+			s.sched.Resume()
+		default:
+			writeErr(w, "неизвестное действие: "+req.Action)
+			return
+		}
+		writeJSON(w, map[string]interface{}{"ok": true, "paused": s.sched.Paused()})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // --- /api/logs ---

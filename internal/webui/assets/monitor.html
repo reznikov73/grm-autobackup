@@ -79,10 +79,10 @@ function renderPlan(d) {
   var host = $('plan');
   host.innerHTML = '';
   var plan = d.plan || [];
-  var selected = d.selectedCount || 0;
+  var selText = d.allSelected ? 'все' : (d.selectedCount || 0);
   if (!plan.length) {
     host.innerHTML = selected
-      ? '<div class="muted">Цикл ещё не начался — в настройках выбрано: ' + selected + ' приложений</div>'
+      ? '<div class="muted">Цикл ещё не начался — в настройках выбрано: ' + selText + ' приложений</div>'
       : '<div class="muted">Очередь пуста</div>';
     $('planSummary').innerHTML = '';
     return;
@@ -118,7 +118,7 @@ function renderPlan(d) {
     row.appendChild(txt);
     host.appendChild(row);
   }
-  $('planSummary').innerHTML = '· в цикле: ' + plan.length + ', в настройках выбрано: ' + selected +
+  $('planSummary').innerHTML = '· в цикле: ' + plan.length + ', в настройках выбрано: ' + selText +
     ' · скачано: ' + counts.done + ', уже было: ' + counts.skip + ', ошибок: ' + counts.err +
     ', осталось: ' + counts.wait;
 }
@@ -160,7 +160,9 @@ function poll() {
     }
     $('detail').innerHTML = '';
     $('detail').appendChild(document.createTextNode(det));
-    $('next').innerHTML = (d.type === 'downloading' || d.type === 'cleaning') ? 'Следующий запуск: — (идёт цикл)' : (d.nextRun ? ('Следующий запуск: ' + d.nextRun) : 'Следующий запуск: —');
+    $('next').innerHTML = d.paused
+      ? 'Сервис остановлен — работа по расписанию приостановлена'
+      : ((d.type === 'downloading' || d.type === 'cleaning') ? 'Следующий запуск: — (идёт цикл)' : (d.nextRun ? ('Следующий запуск: ' + d.nextRun) : 'Следующий запуск: —'));
     $('updated').innerHTML = 'обновлено ' + ts();
     renderPlan(d);
 

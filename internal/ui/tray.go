@@ -32,6 +32,7 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 		menMonitor := systray.AddMenuItem("Монитор действий", "Показать текущие операции")
 		menLog := systray.AddMenuItem("Лог", "Открыть журнал")
 		menDemo := systray.AddMenuItem("Проверка значка (демо)", "Показать, как меняется значок при скачивании")
+		menService := systray.AddMenuItem("Остановить сервис", "Приостановить работу по расписанию")
 		systray.AddSeparator()
 		menStatus := systray.AddMenuItem("Статус: работает", "Статус работы")
 		systray.AddSeparator()
@@ -56,6 +57,14 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 				case <-menLog.ClickedCh:
 					m.Infof("Меню: лог")
 					OpenLogWindow(m, srv)
+				case <-menService.ClickedCh:
+					if s.Paused() {
+						m.Infof("Меню: запуск сервиса")
+						s.Resume()
+					} else {
+						m.Infof("Меню: остановка сервиса")
+						s.Pause()
+					}
 				case <-menDemo.ClickedCh:
 					m.Infof("Меню: демонстрация значка")
 					atomic.StoreInt64(&demoUntil, time.Now().Add(8*time.Second).UnixNano())
@@ -76,6 +85,7 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 
 			lastIconKey := ""
 			lastTitle := ""
+			lastServiceTitle := ""
 			for range ticker.C {
 				action := m.GetCurrent()
 
@@ -105,6 +115,20 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 					iconKey = "error"
 					iconBytes = icons.Error()
 					title = "Статус: ошибка"
+				}
+
+				if s.Paused() && action.Type != monitor.StatusDownloading {
+					iconKey = "paused"
+					iconBytes = icons.Paused()
+					title = "Статус: сервис остановлен"
+				}
+				wantService := "Остановить сервис"
+				if s.Paused() {
+					wantService = "Запустить сервис"
+				}
+				if wantService != lastServiceTitle {
+					menService.SetTitle(wantService)
+					lastServiceTitle = wantService
 				}
 
 				if iconKey != lastIconKey && len(iconBytes) > 0 {
