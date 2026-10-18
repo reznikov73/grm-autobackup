@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/systray"
@@ -12,6 +13,9 @@ import (
 	"grm-autobackup/internal/webui"
 	"grm-autobackup/resources/icons"
 )
+
+// demoUntil — время окончания демонстрации значка (unix nano), 0 — не идёт.
+var demoUntil int64
 
 // RunTray запускает трей-приложение
 func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *monitor.Monitor, srv *webui.Server) error {
@@ -27,6 +31,7 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 		menSettings := systray.AddMenuItem("Настройки", "Открыть настройки")
 		menMonitor := systray.AddMenuItem("Монитор действий", "Показать текущие операции")
 		menLog := systray.AddMenuItem("Лог", "Открыть журнал")
+		menDemo := systray.AddMenuItem("Проверка значка (демо)", "Показать, как меняется значок при скачивании")
 		systray.AddSeparator()
 		menStatus := systray.AddMenuItem("Статус: работает", "Статус работы")
 		systray.AddSeparator()
@@ -51,6 +56,9 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 				case <-menLog.ClickedCh:
 					m.Infof("Меню: лог")
 					OpenLogWindow(m, srv)
+				case <-menDemo.ClickedCh:
+					m.Infof("Меню: демонстрация значка")
+					atomic.StoreInt64(&demoUntil, time.Now().Add(8*time.Second).UnixNano())
 				case <-menQuit.ClickedCh:
 					m.Infof("Меню: выход")
 					s.Stop()
@@ -63,7 +71,7 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 
 		// Периодическое обновление статуса и иконки в трее
 		go func() {
-			ticker := time.NewTicker(2 * time.Second)
+			ticker := time.NewTicker(500 * time.Millisecond)
 			defer ticker.Stop()
 
 			lastIconKey := ""
@@ -71,13 +79,18 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 			for range ticker.C {
 				action := m.GetCurrent()
 
+				// Демонстрация: 0–6 с скачивание, затем очистка и ошибка.
+				if du := atomic.LoadInt64(&demoUntil); du > time.Now().UnixNano() {
+					action = demoAction(du)
+				}
+
 				iconKey := "idle"
 				iconBytes := icons.Idle()
 				title := "Статус: готов"
 
 				switch action.Type {
 				case monitor.StatusDownloading:
-					frame := (int(action.Progress) / 10) * 10
+					frame := (int(action.Progress) / 5) * 5
 					iconKey = fmt.Sprintf("dl-%d", frame)
 					iconBytes = icons.Downloading(float64(frame))
 					title = fmt.Sprintf("Скачивание: %d%%", int(action.Progress))
@@ -111,4 +124,22 @@ func RunTray(cfg *config.Config, cfgPath string, s *scheduler.Scheduler, m *moni
 	})
 
 	return nil
+}
+
+// demoAction возвращает фиктивное состояние для демонстрации значка.
+func demoAction(until int64) *monitor.Action {
+	total := 8 * time.Second
+	elapsed := total - time.Until(time.Unix(0, until))
+	var a monitor.Action
+	switch {
+	case elapsed < 6*time.Second:
+		a.Type = monitor.StatusDownloading
+		a.Progress = float64(elapsed) / float64(6*time.Second) * 100
+		a.SpeedBps = 5.2 * 1024 * 1024
+	case elapsed < 6700*time.Millisecond:
+		a.Type = monitor.StatusCleaning
+	case elapsed < 7400*time.Millisecond:
+		a.Type = monitor.StatusError
+	}
+	return &a
 }
