@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"grm-autobackup/internal/autostart"
@@ -35,6 +36,7 @@ func main() {
 	var cfg *config.Config
 	var cfgPath string
 	var loadErr error
+	firstRun := false
 
 	if _, statErr := os.Stat(exeCfg); statErr == nil {
 		cfgPath = exeCfg
@@ -44,6 +46,7 @@ func main() {
 		cfg, loadErr = config.Load(cwdCfg)
 	} else {
 		// Файла нет — создаём дефолтную конфигурацию рядом с exe.
+		firstRun = true
 		cfgPath = exeCfg
 		cfg = config.Default()
 		if saveErr := cfg.Save(exeCfg); saveErr != nil {
@@ -106,6 +109,20 @@ func main() {
 		m.Infof("Повторный запуск: открываем настройки")
 		ui.OpenSettingsWindow(cfg, cfgPath, s, m, webSrv)
 	})
+
+	// Первый запуск или незаполненный токен: показываем окно настроек,
+	// иначе приложение молча висит в трее без учётных данных.
+	if needSetup := firstRun || strings.TrimSpace(cfg.API.JWTToken) == ""; needSetup {
+		reason := "Первый запуск"
+		if !firstRun {
+			reason = "Токен не задан"
+		}
+		go func() {
+			time.Sleep(1500 * time.Millisecond)
+			m.Infof("%s: открываем настройки", reason)
+			ui.OpenSettingsWindow(cfg, cfgPath, s, m, webSrv)
+		}()
+	}
 
 	// Тестовый хук для автотестов: GRM_TEST_WINDOW=settings|monitor|log
 	if w := os.Getenv("GRM_TEST_WINDOW"); w != "" {

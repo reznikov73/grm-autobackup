@@ -81,7 +81,8 @@ function renderPlan(d) {
   var plan = d.plan || [];
   var selText = d.allSelected ? 'все' : (d.selectedCount || 0);
   if (!plan.length) {
-    host.innerHTML = selected
+    var hasSel = d.allSelected || (d.selectedCount || 0) > 0;
+    host.innerHTML = hasSel
       ? '<div class="muted">Цикл ещё не начался — в настройках выбрано: ' + selText + ' приложений</div>'
       : '<div class="muted">Очередь пуста</div>';
     $('planSummary').innerHTML = '';
