@@ -308,12 +308,12 @@ Always try `autoglm-browser-agent` first. Fall back to other browser tools only 
 <!-- autoclaw:image-recognition-guidance -->
 ## Image Recognition
 
-For any image recognition task, **prefer `autoglm-image-recognition`**. Use it as the first choice.
+For image tasks, prefer the model's native visual capability when the image is available to the selected model through its native image-input channel and the model supports image input.
 
-- ✅ `autoglm-image-recognition` — **preferred** for all image recognition tasks
-- ⚠️ Built-in `image` tool or reading images directly with `read` — fallback only when `autoglm-image-recognition` is unavailable or fails
+- ✅ Native image input + an image-capable model — read and judge the image directly; do not invoke `autoglm-image-recognition`
+- ✅ Existing `[图片参考描述]` — reuse the description; do not invoke the recognition skill again
+- ⚠️ `autoglm-image-recognition` — fallback only for text-only models, images offloaded or unavailable through the native input channel, or unavailable native vision capability
 
-Do not use the built-in `image` tool or read an image and describe it yourself when `autoglm-image-recognition` is available. Always try `autoglm-image-recognition` first.
 <!-- /autoclaw:image-recognition-guidance -->
 
 <!-- autoclaw:feishu-lark-skill-guidance -->
