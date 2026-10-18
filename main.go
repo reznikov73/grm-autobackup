@@ -16,8 +16,9 @@ import (
 )
 
 func main() {
-	// Одна копия приложения
-	if !winutil.EnsureSingleInstance("1С:ГРМ AutoBackup", "Приложение уже запущено — смотрите значок в системном трее.") {
+	// Одна копия приложения: повторный запуск открывает настройки работающей копии.
+	if !winutil.EnsureSingleInstance() {
+		winutil.SignalExistingInstance()
 		return
 	}
 
@@ -99,6 +100,12 @@ func main() {
 			webSrv.Stop()
 		}
 	}()
+
+	// Повторный запуск приложения: открыть настройки работающей копии.
+	winutil.OnActivateRequested(func() {
+		m.Infof("Повторный запуск: открываем настройки")
+		ui.OpenSettingsWindow(cfg, cfgPath, s, m, webSrv)
+	})
 
 	// Тестовый хук для автотестов: GRM_TEST_WINDOW=settings|monitor|log
 	if w := os.Getenv("GRM_TEST_WINDOW"); w != "" {

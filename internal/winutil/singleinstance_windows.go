@@ -4,32 +4,75 @@ package winutil
 
 import (
 	"syscall"
+	"time"
 	"unsafe"
 )
 
 var (
-	modUser32       = syscall.NewLazyDLL("user32.dll")
-	modKernel       = syscall.NewLazyDLL("kernel32.dll")
-	procMsgBox      = modUser32.NewProc("MessageBoxW")
-	procCreateMutex = modKernel.NewProc("CreateMutexW")
+	modKernel32 = syscall.NewLazyDLL("kernel32.dll")
+
+	procCreateMutexW        = modKernel32.NewProc("CreateMutexW")
+	procCreateEventW        = modKernel32.NewProc("CreateEventW")
+	procOpenEventW          = modKernel32.NewProc("OpenEventW")
+	procSetEvent            = modKernel32.NewProc("SetEvent")
+	procCloseHandle         = modKernel32.NewProc("CloseHandle")
+	procWaitForSingleObject = modKernel32.NewProc("WaitForSingleObject")
 )
 
-const mutexName = `Local\GrmAutoBackup_SingleInstance`
+const (
+	mutexName    = `Local\GrmAutoBackup_SingleInstance`
+	activateName = `Local\GrmAutoBackup_Activate`
+
+	eventModifyState = 0x0002
+	waitObject0      = 0
+)
 
 // EnsureSingleInstance сообщает, является ли это первым экземпляром приложения.
-// Вторая копия показывает сообщение и завершается.
-func EnsureSingleInstance(title, text string) bool {
+func EnsureSingleInstance() bool {
 	name, _ := syscall.UTF16PtrFromString(mutexName)
-	h, _, err := procCreateMutex.Call(0, 0, uintptr(unsafe.Pointer(name)))
+	h, _, err := procCreateMutexW.Call(0, 0, uintptr(unsafe.Pointer(name)))
 	if h == 0 {
 		// Не удалось создать мьютекс — не блокируем запуск.
 		return true
 	}
 	if err == syscall.ERROR_ALREADY_EXISTS {
-		t, _ := syscall.UTF16PtrFromString(text)
-		c, _ := syscall.UTF16PtrFromString(title)
-		procMsgBox.Call(0, uintptr(unsafe.Pointer(t)), uintptr(unsafe.Pointer(c)), 0x40)
 		return false
 	}
 	return true
+}
+
+// SignalExistingInstance будит уже запущенную копию, чтобы она открыла настройки.
+func SignalExistingInstance() {
+	name, _ := syscall.UTF16PtrFromString(activateName)
+	// Небольшие повторы покрывают случай, когда первая копия ещё стартует.
+	for i := 0; i < 15; i++ {
+		h, _, _ := procOpenEventW.Call(eventModifyState, 0, uintptr(unsafe.Pointer(name)))
+		if h != 0 {
+			procSetEvent.Call(h)
+			procCloseHandle.Call(h)
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// OnActivateRequested вызывает cb при каждом повторном запуске приложения.
+func OnActivateRequested(cb func()) {
+	name, _ := syscall.UTF16PtrFromString(activateName)
+	// Авто-сбрасываемое событие: сигнал не накапливается.
+	h, _, _ := procCreateEventW.Call(0, 0, 0, uintptr(unsafe.Pointer(name)))
+	if h == 0 {
+		return
+	}
+	go func() {
+		for {
+			r, _, _ := procWaitForSingleObject.Call(h, 0xFFFFFFFF) // INFINITE
+			if uint32(r) != waitObject0 {
+				return
+			}
+			cb()
+			// Склеиваем частые повторные запуски.
+			time.Sleep(300 * time.Millisecond)
+		}
+	}()
 }

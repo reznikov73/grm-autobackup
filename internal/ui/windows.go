@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"syscall"
 
 	"github.com/lxn/walk"
 	"github.com/lxn/win"
@@ -16,6 +17,13 @@ var (
 	windowMu  sync.Mutex
 	openPages = map[string]bool{}
 )
+
+// windowTitles — заголовки окон по страницам (для поиска окна при активации).
+var windowTitles = map[string]string{
+	"settings": "Настройки — 1С:ГРМ AutoBackup",
+	"monitor":  "Монитор действий — 1С:ГРМ AutoBackup",
+	"log":      "Лог — 1С:ГРМ AutoBackup",
+}
 
 func acquireWindow(page string) bool {
 	windowMu.Lock()
@@ -34,12 +42,35 @@ func releaseWindow(page string) {
 	windowMu.Unlock()
 }
 
+// activateWindow поднимает уже открытое окно страницы на передний план.
+func activateWindow(page string) bool {
+	title := windowTitles[page]
+	if title == "" {
+		return false
+	}
+	p, err := syscall.UTF16PtrFromString(title)
+	if err != nil {
+		return false
+	}
+	h := win.FindWindow(nil, p)
+	if h == 0 {
+		return false
+	}
+	win.ShowWindow(h, win.SW_RESTORE)
+	win.SetForegroundWindow(h)
+	return true
+}
+
 // openWindow создаёт окно walk в отдельной горутине.
 // Каждое окно walk должно создаваться на OS-потоке, привязанном к горутине
 // (см. требования walk), поэтому горутина жёстко привязывается к потоку.
 func openWindow(page string, m *monitor.Monitor, build func() (run func() int, err error)) bool {
 	if !acquireWindow(page) {
-		m.Infof("Окно «%s» уже открыто — используйте существующее", page)
+		if activateWindow(page) {
+			m.Infof("Окно «%s» уже открыто — выведено на передний план", page)
+		} else {
+			m.Infof("Окно «%s» уже открыто", page)
+		}
 		return false
 	}
 	go func() {
